@@ -1,0 +1,33 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(unalias rg:*)",
+      "Bash(head:*)",
+      "Bash(grep unified-component-instance:*)",
+      "Bash(grep:*)",
+      "Bash(\"/Users/webprodigies/Desktop/Desktop Folders/webprodigies/products/mochi/mochi-webprodigies-v5/prompts/master-prompts.md\":*)",
+      "Bash(ls:*)",
+      "Bash(npx tsc:*)",
+      "Bash(lsof:*)",
+      "mcp__playwright__browser_navigate",
+      "Bash(pkill:*)",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_run_code",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_take_screenshot",
+      "Bash(node:*)"
+    ]
+  },
+  "preferences": {
+    "tmuxSplitPanes": true
+  },
+  "enabledPlugins": {
+    "ralph-loop@claude-plugins-official": true
+  }
+}

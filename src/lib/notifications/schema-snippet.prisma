@@ -1,0 +1,69 @@
+// ==============================================================================
+// NOTIFICATION MODEL — Schema Snippet for prisma/schema.prisma
+// ==============================================================================
+// This file is a REFERENCE ONLY. The developer must manually copy-paste
+// the model below into prisma/schema.prisma, then run prisma generate + db push.
+//
+// ALSO: Add the relation field to the Organization and User models (see bottom).
+// ==============================================================================
+
+// ---------------------------------------------------------------------------
+// 1. ADD THIS MODEL to prisma/schema.prisma (e.g., after the PageView model)
+// ---------------------------------------------------------------------------
+
+/// In-app notification delivered to a specific user within an organization.
+/// Org-scoped: every notification belongs to exactly one organization.
+/// Category is a free-text string so new notification types can be added
+/// without schema migrations (e.g., 'payment', 'lead', 'automation',
+/// 'form', 'appointment', 'system', 'invoice', 'contract').
+model Notification {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String   // The recipient user (member of the organization)
+
+  // Notification content
+  title    String  // Short headline shown in the notification list
+  body     String  // Longer description / detail text
+  category String  // Logical grouping: 'payment', 'lead', 'automation', 'form', 'appointment', 'system', etc.
+
+  // Optional deep-link URL the user is taken to when clicking the notification
+  actionUrl String?
+
+  // Read state tracking
+  isRead Boolean   @default(false)
+  readAt DateTime? // Timestamp when the user marked this notification as read
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations — org-scoped, cascade-delete when org or user is removed
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Composite index for the primary query: "all unread notifications for a
+  // user in an org, newest first". Covering organizationId + userId + isRead
+  // + createdAt lets Postgres satisfy the WHERE + ORDER BY from one index scan.
+  @@index([organizationId, userId, isRead, createdAt])
+
+  // Secondary indexes for common access patterns
+  @@index([organizationId]) // Org-wide notification queries / admin views
+  @@index([userId])         // Cross-org notification lookup for a user
+
+  @@map("notification")
+}
+
+// ---------------------------------------------------------------------------
+// 2. ADD THIS LINE inside the Organization model (relations section ~line 159)
+//    Right after:  pageViews  PageView[]
+// ---------------------------------------------------------------------------
+//
+//   notifications    Notification[]  // In-app notifications for org members
+//
+
+// ---------------------------------------------------------------------------
+// 3. ADD THIS LINE inside the User model (relations section ~line 38)
+//    Right after:  activityLogs  ActivityLog[]
+// ---------------------------------------------------------------------------
+//
+//   notifications  Notification[]  // In-app notifications received by this user
+//

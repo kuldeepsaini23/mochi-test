@@ -1,0 +1,61 @@
+// ==============================================================================
+// PUSH SUBSCRIPTION MODEL — Schema Snippet for prisma/schema.prisma
+// ==============================================================================
+// This file is a REFERENCE ONLY. The developer must manually copy-paste
+// the model below into prisma/schema.prisma, then run prisma generate + db push.
+//
+// ALSO: Add the relation field to the Organization and User models (see bottom).
+// ==============================================================================
+
+// ---------------------------------------------------------------------------
+// 1. ADD THIS MODEL to prisma/schema.prisma (e.g., after the Notification model)
+// ---------------------------------------------------------------------------
+
+/// Web Push subscription for PWA push notifications.
+/// Stores the browser's PushSubscription data so the server can send
+/// native push notifications to the user's device even when the app is
+/// closed or backgrounded.
+///
+/// Each record = one device/browser subscription for one user in one org.
+/// A user can have multiple subscriptions (phone + laptop + tablet).
+model PushSubscription {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String   // The user who subscribed on this device
+
+  // PushSubscription fields from the Web Push API
+  endpoint String  // The push service URL (unique per browser instance)
+  p256dh   String  // Client public key for payload encryption
+  auth     String  // Shared auth secret for payload encryption
+
+  createdAt DateTime @default(now())
+
+  // Relations — cascade-delete when org or user is removed
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // A user can only have one subscription per endpoint (device/browser).
+  // Re-subscribing on the same browser replaces the old subscription.
+  @@unique([userId, endpoint])
+
+  // Index for "send push to all of this user's devices in this org"
+  @@index([organizationId, userId])
+
+  @@map("push_subscription")
+}
+
+// ---------------------------------------------------------------------------
+// 2. ADD THIS LINE inside the Organization model (relations section)
+//    Right after:  notifications    Notification[]
+// ---------------------------------------------------------------------------
+//
+//   pushSubscriptions PushSubscription[]  // Web push subscriptions for PWA notifications
+//
+
+// ---------------------------------------------------------------------------
+// 3. ADD THIS LINE inside the User model (relations section)
+//    Right after:  notifications  Notification[]
+// ---------------------------------------------------------------------------
+//
+//   pushSubscriptions PushSubscription[]  // Web push subscriptions for PWA notifications
+//

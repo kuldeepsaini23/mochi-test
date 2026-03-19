@@ -1,0 +1,4276 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String            @id
+  name               String
+  email              String            @unique
+  emailVerified      Boolean           @default(false)
+  image              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @default(now()) @updatedAt
+  twoFactorEnabled   Boolean?          @default(false)
+  role               String? // Better-auth admin plugin: 'admin' for impersonation access
+  banExpires         DateTime?
+  banReason          String?
+  banned             Boolean?          @default(false)
+  onboardingComplete Boolean           @default(false)
+  firstName          String?
+  lastName           String?
+  stripeCustomerId   String?           @unique
+  referredBy         String? // User ID of the affiliate who referred this user
+  affiliateCode      String?           @unique // Unique affiliate code for this user
+  timezone           String?           @default("UTC") // User's timezone (IANA format, e.g., "America/New_York")
+  accounts           Account[]
+  invitations        Invitation[]
+  members            Member[]
+  sessions           Session[]
+  twofactors         TwoFactor[]
+  cardFingerprints   CardFingerprint[]
+  portalAdmin        PortalAdmin?      // Link to portal admin if user is a platform admin
+  activityLogs       ActivityLog[]     // Activity logs for tracking user actions
+  notifications      Notification[]    // In-app notifications received by this user
+  pushSubscriptions  PushSubscription[] // Web push subscriptions for PWA notifications
+
+  @@map("user")
+}
+
+model Session {
+  id                   String   @id
+  expiresAt            DateTime
+  token                String   @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  activeOrganizationId String?
+  impersonatedBy       String?
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@map("verification")
+}
+
+model Organization {
+  id            String   @id
+  name          String
+  slug          String   @unique
+  customDomain  String?  @unique // Custom domain (e.g., mycompany.com)
+  logo          String? // Square logo for icons/favicons
+  rectangleLogo String? // Rectangle/wide logo for headers
+  createdAt     DateTime
+  metadata      String?
+
+  // Organization contact info — displayed on invoices and public-facing pages
+  address      String? // Physical/mailing address (free-text, single line)
+  contactEmail String? // Public-facing contact email (shown on invoices)
+
+  // Stripe Standard Account
+  stripeConnectedAccountId String? // Stripe account ID (acct_xxx)
+
+  // Stripe Account Restriction Cache (updated via account.updated webhook)
+  stripeAccountRestricted       Boolean @default(false) // True if account has restrictions
+  stripeAccountRestrictedReason String? // Disabled reason from Stripe (if any)
+
+  // Stripe Account Currency Info (SOURCE OF TRUTH for org currency)
+  // Populated when Stripe account is connected, updated via account.updated webhook
+  stripeAccountCountry  String? // ISO 3166-1 alpha-2 country code (e.g., "US", "GB", "FR")
+  stripeAccountCurrency String? // ISO 4217 lowercase currency code (e.g., "usd", "eur", "gbp")
+
+  // Portal Organization Flag
+  // When true, this organization uses the hidden 'portal' tier with unlimited features
+  // Only set for the portal owner's personal organization
+  isPortalOrganization Boolean @default(false)
+
+  // Churned timestamp — set when a paid subscription ends (customer.subscription.deleted)
+  // Used by portal to distinguish "never paid" (null) from "paid then cancelled" (timestamp)
+  // Cleared when a new subscription is created/activated
+  churnedAt DateTime? @map("churned_at")
+
+  invitations          Invitation[]
+  members              Member[]
+  organizationroles    OrganizationRole[]
+  subscriptions        Subscription[]
+  usageMetrics         UsageMetrics[]
+  leads                Lead[]
+  leadTags             LeadTag[]
+  customDataCategories CustomDataCategory[]
+  products             Product[]
+  domains              Domain[] // All domains owned by this organization
+  websites             Website[] // All website categories owned by this organization
+  pages                Page[] // All pages owned by this organization (denormalized for direct access)
+  cmsTables            CmsTable[] // CMS tables owned by this organization
+  storageFolders       StorageFolder[] // File storage folders
+  storageFiles         StorageFile[] // Uploaded files
+  formFolders          FormFolder[] // Form organization folders
+  forms                Form[] // Forms owned by this organization
+  emailDomains         EmailDomain[] // Custom email domains for sending (Resend)
+  emailTemplates       EmailTemplate[] // Reusable email templates (React Email builder)
+  emailTemplateFolders EmailTemplateFolder[] // Folders for organizing templates
+  conversations        Conversation[] // Inbox conversations with leads
+  messages             Message[] // All messages in inbox
+  pipelines            Pipeline[] // Kanban/Pipeline boards for deal tracking
+  stores               Store[] // Ecommerce stores for product organization
+  chatWidgets          ChatWidget[] // Chat widgets for customer support and AI chatbots
+  leadSessions         LeadSession[] // Lead identification sessions (sticky forms)
+  guestSessions        GuestSession[] // Anonymous chat widget sessions
+  guestMessages        GuestMessage[] // Messages from anonymous chat widget visitors
+  calendarEvents       CalendarEvent[] // Calendar events for scheduling
+  bookingCalendars     BookingCalendar[] // Booking calendars for appointment scheduling
+  wallet               OrganizationWallet? // Organization wallet for usage-based billing
+  automations          Automation[] // Automation workflows for this organization
+  automationFolders    AutomationFolder[] // Folders for organizing automations
+  activityLogs         ActivityLog[]       // Activity logs for tracking user actions
+  inventoryHistory     InventoryHistory[]  // Inventory change audit trail
+  orders               Order[]             // E-commerce orders for fulfillment
+  contracts            Contract[]          // Legal contracts and agreements
+  contractFolders      ContractFolder[]    // Folders for organizing contracts
+  invoices             Invoice[]           // Invoices sent to leads for payment
+  pageViews            PageView[]          // Page view analytics for website tracking
+  notifications        Notification[]      // In-app notifications for org members
+  pushSubscriptions    PushSubscription[]  // Web push subscriptions for PWA notifications
+  savedColors          SavedColor[]        // Saved brand/reusable colors for the website builder
+  templates            Template[]          // Reusable multi-feature templates created by this org
+  templateInstalls     TemplateInstall[]   // Records of templates installed into this org
+  templateOriginMarkers TemplateOriginMarker[] // Origin markers tracking which features came from templates
+
+  @@map("organization")
+}
+
+model OrganizationRole {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           String
+  permission     String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime?    @updatedAt
+
+  @@map("organizationRole")
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  userId         String
+  role           String
+  createdAt      DateTime
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Tickets assigned to this member
+  assignedTickets PipelineTicket[]
+
+  // Calendar events assigned to this member
+  assignedCalendarEvents CalendarEvent[]
+
+  // Member's personal availability schedule for booking calendars
+  availability MemberAvailability[]
+
+  // Booking calendars this member is assigned to
+  assignedBookingCalendars BookingCalendarAssignee[]
+
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  email          String
+  role           String?
+  status         String
+  expiresAt      DateTime
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("invitation")
+}
+
+model TwoFactor {
+  id          String @id
+  secret      String
+  backupCodes String
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("twoFactor")
+}
+
+model Subscription {
+  id                   String       @id
+  plan                 String
+  referenceId          String
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  status               String       @default("incomplete")
+  periodStart          DateTime?
+  periodEnd            DateTime?
+  cancelAtPeriodEnd    Boolean      @default(false)
+  seats                Int?
+  trialStart           DateTime?
+  trialEnd             DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  organization         Organization @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  @@map("subscription")
+}
+
+model UsageMetrics {
+  id             String       @id @default(cuid())
+  organizationId String
+  featureKey     String // e.g., "clients.limit", "websites.limit"
+  currentUsage   Int          @default(0)
+  lastResetAt    DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, featureKey])
+  @@index([organizationId])
+  @@map("usageMetrics")
+}
+
+model CardFingerprint {
+  id            String   @id @default(cuid())
+  userId        String
+  fingerprint   String // Stripe card fingerprint
+  usedFreeTrial Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([fingerprint])
+  @@index([userId])
+  @@map("cardFingerprint")
+}
+
+// ============================================================================
+// LEADS / CONTACTS MANAGEMENT
+// ============================================================================
+
+model Lead {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Contact Information
+  firstName String?
+  lastName  String?
+  email     String
+  phone     String?
+  avatarUrl String?
+
+  // Location
+  location     String @default("Unknown")
+  locationCode String @default("XX")
+
+  // Business details
+  source String? // Where the lead came from (Website, Referral, etc.)
+  cltv   Float      @default(0) // Customer Lifetime Value
+  status LeadStatus @default(LEAD)
+
+  // Address Information
+  address  String? // Street address line 1
+  address2 String? // Street address line 2 (apt, suite, etc.)
+  city     String?
+  state    String? // State/Province
+  zipCode  String? // Zip/Postal code
+  country  String? // Country code (e.g., "US", "GB")
+
+  // Assignment
+  assignedToId String? // Member ID who is assigned to this lead
+
+  // Timestamps
+  lastActivityAt DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime? // Soft delete
+
+  // Relations
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tags                LeadTagAssignment[]
+  customDataResponses CustomDataResponse[]
+  transactions        Transaction[]
+  conversations       Conversation[]
+  pipelineTickets     PipelineTicket[]
+  sessions            LeadSession[] // Lead identification sessions (sticky forms)
+  calendarEvents      CalendarEvent[] // Calendar events linked to this lead
+  contracts           Contract[] // Contracts sent to this lead for signing
+  invoices            Invoice[]  // Invoices sent to this lead for payment
+  pageViews           PageView[] // Page views tracked for this identified lead
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, email])
+  @@index([assignedToId])
+  @@map("lead")
+}
+
+model LeadTag {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  color          String    @default("#3b82f6") // Hex color
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime? // Soft delete
+
+  // Relations
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads        LeadTagAssignment[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("leadTag")
+}
+
+model LeadTagAssignment {
+  id        String   @id @default(cuid())
+  leadId    String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  lead Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag  LeadTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, tagId])
+  @@index([leadId])
+  @@index([tagId])
+  @@map("leadTagAssignment")
+}
+
+// ============================================================================
+// LEAD SESSION (STICKY FORMS)
+// ============================================================================
+
+/**
+ * LeadSession - Secure session tokens for lead identification
+ * SOURCE OF TRUTH KEYWORDS: LeadSession, StickyForm, LeadIdentification
+ * WHY: Enables identifying returning visitors across forms, chat widgets,
+ * and embedded components without requiring authentication. Uses secure
+ * HMAC-SHA256 signed tokens that are organization-bound.
+ * SECURITY: Token hash is stored (never raw token), making brute force
+ * attacks infeasible. Tokens are cryptographically signed with org binding.
+ */
+model LeadSession {
+  id             String @id @default(cuid())
+  organizationId String
+  leadId         String
+
+  // Token storage (hash only, never raw for security)
+  tokenHash   String @unique // SHA-256 hash of the full token for lookup
+  tokenSuffix String // Last 8 chars of token for debugging/support
+
+  // Session metadata
+  source String? // Where session was created: 'form', 'chatbot', 'website', etc.
+
+  // Activity tracking
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, leadId])
+  @@index([tokenHash])
+  @@index([leadId])
+  @@map("leadSession")
+}
+
+/**
+ * GuestSession - Anonymous chat widget session before lead identification
+ * SOURCE OF TRUTH KEYWORDS: GuestSession, ChatWidgetGuest, AnonymousSession
+ * WHY: Allows anonymous visitors to use chat widgets before providing their email.
+ * Messages are stored against this guest session and later transferred to a Lead
+ * when the user provides their email (session conversion).
+ * FLOW:
+ * 1. Visitor opens chat widget -> GuestSession created with unique token
+ * 2. Visitor sends messages -> Messages linked to GuestSession
+ * 3. Visitor provides email -> GuestSession converted to LeadSession
+ * 4. All messages transferred to the Lead's conversation
+ * SECURITY: Same HMAC-SHA256 signed token approach as LeadSession
+ */
+model GuestSession {
+  id             String @id @default(cuid())
+  organizationId String
+  chatWidgetId   String
+
+  // Token storage (hash only, never raw for security)
+  tokenHash   String @unique // SHA-256 hash of the full token for lookup
+  tokenSuffix String // Last 8 chars of token for debugging/support
+
+  // Browser/device identification (optional, for session continuity)
+  userAgent   String? // Browser user agent string
+  fingerprint String? // Browser fingerprint hash (if available)
+
+  // Session state
+  isConverted       Boolean @default(false) // True when converted to LeadSession
+  convertedToLeadId String? // The Lead ID after conversion
+
+  // Activity tracking
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  // Relations
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  chatWidget   ChatWidget     @relation(fields: [chatWidgetId], references: [id], onDelete: Cascade)
+  messages     GuestMessage[]
+
+  @@index([organizationId])
+  @@index([organizationId, chatWidgetId])
+  @@index([tokenHash])
+  @@index([chatWidgetId])
+  @@map("guestSession")
+}
+
+/**
+ * GuestMessage - Messages from anonymous chat widget visitors
+ * SOURCE OF TRUTH KEYWORDS: GuestMessage, ChatWidgetGuestMessage
+ * WHY: Stores messages from guests before they're identified. When the guest
+ * provides their email, these messages are copied to the Lead's conversation.
+ * NOTE: Uses separate table from Message to avoid nullable foreign keys
+ * and to keep the main Message table clean for known leads only.
+ */
+model GuestMessage {
+  id             String @id @default(cuid())
+  organizationId String
+  guestSessionId String
+
+  // Message content
+  direction MessageDirection // INBOUND (from guest) or OUTBOUND (to guest)
+  body      String           @db.Text
+
+  // Timestamps
+  sentAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  guestSession GuestSession @relation(fields: [guestSessionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([guestSessionId])
+  @@index([guestSessionId, sentAt])
+  @@map("guestMessage")
+}
+
+// ============================================================================
+// INBOX / CONVERSATIONS FEATURE
+// ============================================================================
+
+/**
+ * Conversation - A thread of messages with a lead across multiple channels
+ * SOURCE OF TRUTH KEYWORDS: Conversation, InboxConversation, MessageThread
+ * WHY: Represents a communication thread with a lead. Conversations can span
+ * multiple channels (email, sms, instagram, etc.) and contain many messages.
+ */
+model Conversation {
+  id             String @id @default(cuid())
+  organizationId String
+  leadId         String
+
+  // Conversation metadata
+  subject    String? // Optional subject (from first email or generated)
+  isStarred  Boolean @default(false)
+  isArchived Boolean @default(false)
+
+  // Read status tracking
+  hasUnread          Boolean   @default(true)
+  lastReadAt         DateTime?
+  lastMessageAt      DateTime  @default(now())
+  lastMessagePreview String? // Preview text for sidebar
+
+  // Primary channel (most used or last used channel)
+  primaryChannel MessageChannel @default(EMAIL)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  messages     Message[]
+
+  @@index([organizationId])
+  @@index([organizationId, hasUnread])
+  @@index([organizationId, isArchived])
+  @@index([organizationId, lastMessageAt])
+  @@index([leadId])
+  @@map("conversation")
+}
+
+/**
+ * Message - Individual message within a conversation
+ * SOURCE OF TRUTH KEYWORDS: Message, InboxMessage, ConversationMessage, EmailMessage
+ * WHY: Stores all messages across channels. Each message belongs to a conversation
+ * and can be either inbound (from lead) or outbound (from our users).
+ */
+model Message {
+  id             String @id @default(cuid())
+  conversationId String
+  organizationId String
+
+  // Message content
+  channel   MessageChannel
+  direction MessageDirection
+  subject   String? // For emails
+  body      String           @db.Text
+  bodyHtml  String?          @db.Text // HTML version for emails
+
+  // Sender/recipient details (stored for context even if lead data changes)
+  fromName  String?
+  fromEmail String?
+  toEmail   String?
+
+  // External references (for syncing with providers)
+  resendMessageId String? // Resend's internal ID for outbound emails
+  externalId      String? // ID from external provider (Instagram, etc.)
+
+  // RFC 2822 Message-ID header for email threading
+  // WHY: Email clients (Gmail, Outlook) use this to group emails into threads
+  // Used for In-Reply-To and References headers when sending replies
+  emailMessageId String? // e.g., "<abc123@resend.dev>"
+
+  // Status tracking
+  isRead Boolean       @default(false)
+  status MessageStatus @default(SENT)
+
+  // Attachments (stored as JSON array of attachment metadata)
+  attachments Json? // Array of { name, size, type, url }
+
+  // Timestamps
+  sentAt    DateTime  @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([conversationId, sentAt])
+  @@index([organizationId])
+  @@index([resendMessageId])
+  @@map("message")
+}
+
+/**
+ * Message channel enum - Supported communication channels
+ * SOURCE OF TRUTH: Must match types.ts MessageChannel type
+ */
+enum MessageChannel {
+  EMAIL
+  INSTAGRAM
+  SMS
+  INTERNAL // Internal notes/comments
+  FORM // Form submissions
+  CHATBOT // Chat widget messages from leads/guests
+}
+
+/**
+ * Message direction enum - Whether message is from or to the lead
+ */
+enum MessageDirection {
+  INBOUND // From lead to us
+  OUTBOUND // From us to lead
+}
+
+/**
+ * Message status enum - Delivery/read status of the message
+ * SOURCE OF TRUTH KEYWORDS: MessageStatus, EmailDeliveryStatus
+ * LIFECYCLE:
+ * DRAFT -> QUEUED -> SENT -> DELIVERED -> OPENED (if tracking enabled)
+ * -> FAILED/BOUNCED (on error)
+ */
+enum MessageStatus {
+  DRAFT // Message saved but not sent
+  QUEUED // Message queued for sending
+  SENT // Message sent to email provider
+  DELIVERED // Message delivered to recipient's server
+  OPENED // Recipient opened the email (requires tracking enabled)
+  FAILED // Message failed to send
+  BOUNCED // Message bounced (hard/soft bounce)
+}
+
+// ============================================================================
+// CUSTOM DATA FEATURE
+// ============================================================================
+
+model CustomDataCategory {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  slug           String
+  description    String?
+  icon           String?
+  order          Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime? // Soft delete
+
+  // Relations
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fields       CustomDataField[]
+  responses    CustomDataResponse[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([organizationId, order])
+  @@map("customDataCategory")
+}
+
+model CustomDataField {
+  id           String              @id @default(cuid())
+  categoryId   String
+  name         String
+  slug         String
+  label        String
+  fieldType    CustomDataFieldType
+  required     Boolean             @default(false)
+  placeholder  String?
+  helpText     String?
+  defaultValue String?
+  validation   Json? // For min/max/pattern etc.
+  options      Json? // For select/radio/checkbox options
+  order        Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  deletedAt    DateTime? // Soft delete
+
+  // Relations
+  category CustomDataCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, slug])
+  @@index([categoryId])
+  @@index([categoryId, order])
+  @@map("customDataField")
+}
+
+model CustomDataResponse {
+  id         String   @id @default(cuid())
+  leadId     String
+  categoryId String
+  values     Json // Stores all field values for this category
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  lead     Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  category CustomDataCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, categoryId, version])
+  @@index([leadId])
+  @@index([categoryId])
+  @@index([leadId, categoryId])
+  @@map("customDataResponse")
+}
+
+enum CustomDataFieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  CURRENCY
+  EMAIL
+  PHONE
+  URL
+  DATE
+  DATETIME
+  CHECKBOX
+  RADIO
+  SELECT
+  MULTISELECT
+}
+
+enum LeadStatus {
+  LEAD
+  PROSPECT
+  ACTIVE
+  INACTIVE
+}
+
+// ============================================================================
+// PRODUCTS & PRICING (STRIPE CONNECT)
+// ============================================================================
+
+model Product {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Product details
+  name        String
+  description String?
+  imageUrl    String?
+  // SOURCE OF TRUTH: ProductImages — gallery URLs stored as JSON string[]
+  images      Json    @default("[]")
+
+  // Stripe Integration
+  stripeProductId String? @unique // Stripe product ID (prod_xxx)
+
+  // Status
+  active Boolean @default(true)
+
+  /**
+   * SOURCE OF TRUTH: ProductTestMode
+   * When true, payment links for this product use test Stripe API keys.
+   * Test payments go to platform's test account, not connected account.
+   */
+  testMode Boolean @default(false)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // === INVENTORY MANAGEMENT ===
+  // SOURCE OF TRUTH: ProductInventory
+  // When trackInventory is true, inventory is enforced at checkout
+  trackInventory    Boolean @default(false)   // Whether to track stock for this product
+  inventoryQuantity Int     @default(0)       // Current available stock count
+  allowBackorder    Boolean @default(false)   // Allow purchases when out of stock
+  lowStockThreshold Int?    @default(10)      // Alert threshold for low stock notifications
+
+  // Relations
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  prices           ProductPrice[]
+  paymentLinks     PaymentLink[]
+  storeProducts    StoreProduct[]     // Stores this product is listed in
+  inventoryHistory InventoryHistory[] // Audit trail of inventory changes
+
+  @@index([organizationId])
+  @@index([organizationId, active])
+  @@map("product")
+}
+
+model ProductPrice {
+  id        String @id @default(cuid())
+  productId String
+
+  // Price details
+  name     String // e.g., "Monthly Plan", "One-Time Purchase", "5-Payment Plan"
+  amount   Int // Amount in cents
+  currency String @default("usd")
+
+  // Billing configuration
+  billingType BillingType // ONE_TIME, RECURRING, SPLIT_PAYMENT
+
+  // Recurring billing options (for RECURRING type)
+  interval      BillingInterval? // WEEK, MONTH, YEAR
+  intervalCount Int?             @default(1) // e.g., 2 for "every 2 months"
+
+  // Split payment options (for SPLIT_PAYMENT type)
+  installments             Int? // Number of installments (e.g., 5)
+  installmentInterval      BillingInterval? // How often payments are due
+  installmentIntervalCount Int?             @default(1)
+
+  // Free trial configuration (for RECURRING and ONE_TIME, not SPLIT_PAYMENT)
+  trialDays Int? // Trial duration in days — customer is not charged during trial
+
+  // Stripe Integration
+  stripePriceId String? @unique // Stripe price ID (price_xxx)
+
+  // Status
+  active Boolean @default(true)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  features      PriceFeature[]
+  paymentLinks  PaymentLink[]
+  storeProducts StoreProduct[] // Store listings using this price
+
+  @@index([productId])
+  @@index([productId, active])
+  @@map("productPrice")
+}
+
+model PriceFeature {
+  id      String @id @default(cuid())
+  priceId String
+
+  // Feature details
+  name        String // e.g., "Daily updates", "Coaching calls", "Unlimited courses"
+  description String?
+  order       Int     @default(0) // For ordering features in the UI
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  price ProductPrice @relation(fields: [priceId], references: [id], onDelete: Cascade)
+
+  @@index([priceId])
+  @@index([priceId, order])
+  @@map("priceFeature")
+}
+
+enum BillingType {
+  ONE_TIME // Single payment
+  RECURRING // Subscription (weekly, monthly, yearly)
+  SPLIT_PAYMENT // Installment plan (e.g., $4000 split into 5 payments)
+}
+
+enum BillingInterval {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+// ============================================================================
+// DOMAINS & WEBSITES (CONTENT MANAGEMENT)
+// ============================================================================
+//
+// ARCHITECTURE OVERVIEW:
+// ----------------------
+// Domains and Websites follow a one-to-many relationship:
+// - ONE Domain can have MANY Websites (pages)
+// - Each Website represents a unique page/route within that domain
+//
+// Example:
+//   Domain: "webprodigies" (resolves to webprodigies.platform.com or custom domain)
+//     └─ Website 1: slug="home" → webprodigies.platform.com/home
+//     └─ Website 2: slug="about" → webprodigies.platform.com/about
+//     └─ Website 3: slug="contact" → webprodigies.platform.com/contact
+//
+//   Domain: "courses.webprodigies" (subdomain support)
+//     └─ Website 1: slug="catalog" → courses.webprodigies.platform.com/catalog
+//     └─ Website 2: slug="lesson-1" → courses.webprodigies.platform.com/lesson-1
+//
+// Builder Behavior:
+// - When editing a Website in the builder, ONLY the pages for THAT specific Website are shown
+// - Each Website has its own canvasData (pages, elements, layouts)
+// - Multiple Websites share the same Domain but have different URL paths (slugs)
+//
+// Benefits:
+// - Allows grouping related pages under one domain
+// - Supports both platform subdomains and custom domains
+// - Enables flexible site structure (e.g., different landing pages for different campaigns)
+// - Maintains clean separation of page content while sharing domain configuration
+
+// ============================================================================
+// DOMAIN MODEL
+// ============================================================================
+//
+// Represents a custom domain that can host multiple websites.
+// A domain is simply the actual domain name (e.g., "webprodigies.com").
+// One domain can have multiple websites, but a domain belongs to only one organization.
+//
+// URL Structure:
+// - Preview: /{website.previewId}/{slug} (uses website's previewId, not domain)
+// - Production: {domain.customDomain}/{slug} (uses actual domain)
+
+model Domain {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // The actual custom domain - GLOBALLY UNIQUE across all organizations
+  // This is the production domain where websites are hosted
+  // Examples: "webprodigies.com", "shop.acme.com", "courses.mybrand.io"
+  customDomain String @unique
+
+  // Domain verification status
+  // Indicates whether the domain's DNS records have been verified
+  isVerified Boolean @default(false)
+
+  // Domain branding
+  faviconUrl String? // Shared favicon for all websites under this domain
+  logoUrl    String? // Shared logo/brand for all websites under this domain
+
+  // Default page configuration
+  // When visitors access the root of this domain (e.g., webprodigies.com/)
+  // they will be redirected to this page. If null, a 404 is shown.
+  defaultPageId String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // NOTE: Domains use HARD DELETE - when deleted, websites/pages have domainId set to null
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  websites     Website[] // All website categories hosted under this domain
+  pages        Page[] // All pages hosted under this domain (for direct queries)
+  defaultPage  Page?        @relation("DomainDefaultPage", fields: [defaultPageId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([customDomain])
+  @@map("domain")
+}
+
+// ============================================================================
+// WEBSITE MODEL
+// ============================================================================
+//
+// Represents a single page/route within a domain.
+// Each website has its own builder content (canvasData) and unique URL path (slug).
+//
+// URL Structure:
+// - Preview: /{website.previewId}/{website.slug} (uses auto-generated previewId)
+// - Production: {domain.customDomain}/{website.slug} (uses actual custom domain)
+//
+// Example Scenarios:
+// 1. Multiple landing pages for a marketing campaign:
+//    Domain: "promo"
+//      - Website: pathname="black-friday" (promo.platform.com/black-friday)
+//      - Website: pathname="cyber-monday" (promo.platform.com/cyber-monday)
+//
+// 2. Multi-page website:
+//    Domain: "mycompany"
+//      - Website: pathname="home" (mycompany.platform.com/home)
+//      - Website: pathname="about" (mycompany.platform.com/about)
+//      - Website: pathname="contact" (mycompany.platform.com/contact)
+
+// ============================================================================
+// WEBSITE MODEL (CATEGORY/GROUPING)
+// ============================================================================
+//
+// A Website is a CATEGORY/GROUPING that contains multiple Pages.
+// Think of it as a "project" or "folder" that groups related pages together.
+//
+// Example:
+//   Domain: "webprodigies"
+//     └─ Website: "Marketing Site" (category)
+//         └─ Page: /home
+//         └─ Page: /about
+//         └─ Page: /contact
+//     └─ Website: "Landing Pages" (category)
+//         └─ Page: /black-friday
+//         └─ Page: /cyber-monday
+//
+// The Website itself does NOT have canvas data or publish status.
+// Each Page has its own canvas data and individual publish status.
+
+model Website {
+  id             String  @id @default(cuid())
+  organizationId String
+  domainId       String? // Optional - null when domain is deleted or not assigned
+
+  // ========================================================================
+  // PREVIEW ID - AUTO-GENERATED URL IDENTIFIER
+  // ========================================================================
+  // SOURCE OF TRUTH: WebsitePreviewId, PreviewUrl, StagingId
+  // Auto-generated unique identifier for preview/staging URLs.
+  // This replaces the confusing domain.name in URLs.
+  //
+  // URL PATTERN:
+  // - Preview: {org}.mochi.test/{previewId}/{page.slug}
+  // - Production: {customDomain}/{page.slug}
+  //
+  // WHY: Users were putting domain-like values in domain.name (e.g., "webprodigies-com")
+  // which created confusing URLs. previewId is auto-generated (e.g., "a7x9k2m5")
+  // making it clear the URL is temporary/for development.
+  previewId String? @unique
+
+  // Website details (category info)
+  name        String // Display name (e.g., "Marketing Site", "Landing Pages")
+  description String? // Optional description for internal reference
+
+  // ========================================================================
+  // E-COMMERCE CONFIGURATION
+  // ========================================================================
+  // SOURCE OF TRUTH: Website E-commerce, EnableEcommerce, EcommerceEnabled
+  // When enabled, pre-defined E-commerce pages are created for this website
+  // When disabled, all E-commerce pages and their assets are HARD DELETED
+  enableEcommerce Boolean @default(false)
+
+  // ========================================================================
+  // CHAT WIDGET INTEGRATION
+  // ========================================================================
+  // SOURCE OF TRUTH: WebsiteChatWidget, ChatbotIntegration
+  // Optional chat widget to display on this website's preview and live view
+  // When assigned, the chat widget renders as a floating button on the site
+  // SetNull on delete - if chat widget is deleted, website continues working
+  chatWidgetId String?
+
+  // ========================================================================
+  // BRAND COLOR PALETTE
+  // ========================================================================
+  // SOURCE OF TRUTH: BrandColorPalette, WebsiteBrandColors, AIBrandColors
+  // Per-website color palette used by the AI when generating sections.
+  // Stored as JSON with a well-defined shape validated at the application layer
+  // via Zod schema in brand-palette.ts.
+  // When null, the system uses default colors from style-defaults.ts.
+  brandColors Json?
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  domain          Domain?          @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  chatWidget      ChatWidget?      @relation(fields: [chatWidgetId], references: [id], onDelete: SetNull)
+  pages           Page[]           // All pages within this website category
+  localComponents LocalComponent[] // Reusable components scoped to this website
+  pageViews       PageView[]       // Page view analytics for this website
+
+  @@index([organizationId])
+  @@index([domainId])
+  @@index([chatWidgetId])
+  @@map("website")
+}
+
+// ============================================================================
+// LOCAL COMPONENT MODEL (WEBSITE-SCOPED REUSABLE COMPONENTS)
+// ============================================================================
+//
+// LocalComponents are reusable element templates scoped to a specific website.
+// They allow users to create consistent, repeatable UI patterns.
+//
+// KEY CONCEPTS:
+// - Master Component: The LocalComponent definition (this model)
+// - Instance: A ComponentInstanceElement on a canvas that references this
+//
+// ARCHITECTURE:
+// - sourceTree contains the complete element hierarchy with ALL styles
+// - Instances only store: position, size, and propValues for exposed props
+// - Rendering an instance = render master's sourceTree + apply propValues
+// - Editing the master updates ALL instances automatically
+//
+// EXPOSED PROPS:
+// - Allow instance-level customization without breaking the component pattern
+// - Future CMS integration will connect exposed props to database fields
+
+model LocalComponent {
+  id          String  @id @default(cuid())
+  websiteId   String
+  name        String
+  description String?
+
+  // The complete element tree (root + all children with their styles)
+  // Structure: { rootElement: {...}, childElements: [...], childrenMap: {...} }
+  sourceTree Json
+
+  // Exposed properties for instance customization
+  // Structure: [{ id, name, elementId, propertyId, propertyPath, defaultValue }, ...]
+  exposedProps Json @default("[]")
+
+  // Metadata for organization
+  tags String[] @default([])
+
+  // Loading skeleton styles for SmartCMS List rendering
+  // Structure: { primaryColor?: string, accentColor?: string }
+  // primaryColor: subtle background for skeleton containers
+  // accentColor: shimmer effect color for text/image/button placeholders
+  skeletonStyles Json?
+
+  // The ID of the first instance created (the "master" instance on canvas)
+  // This is the instance that replaced the original frame during conversion
+  // It has special behavior: cannot be detached, editing updates the component
+  primaryInstanceId String?
+
+  // Optional ID of another LocalComponent to use as loading skeleton
+  // When this component is used in SmartCMS List, the skeleton component
+  // is rendered during loading instead of a generic spinner
+  loadingSkeletonComponentId String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@index([websiteId])
+  @@map("local_component")
+}
+
+// ============================================================================
+// PAGE MODEL (FIRST-CLASS ENTITY)
+// ============================================================================
+//
+// Each Page is a FIRST-CLASS database entity with:
+// - Its own URL slug (unique within the domain)
+// - Its own canvas data (the page's elements)
+// - Its own publish status (independent of other pages)
+// - Proper soft delete with deletedAt
+//
+// URL Structure:
+// - Preview: /{website.previewId}/{page.slug}
+// - Production: {domain.customDomain}/{page.slug}
+//
+// Builder Behavior:
+// - Builder loads ALL pages in a domain, grouped by website (category)
+// - Each page can be edited, saved, and published independently
+// - Deleting a page sets deletedAt (soft delete), making it return 404
+
+model Page {
+  id             String  @id @default(cuid())
+  organizationId String
+  domainId       String? // Optional - null when domain is deleted or not assigned
+  websiteId      String // Which website category this page belongs to
+
+  // Page identification
+  slug String // URL path (e.g., "home", "about", "contact")
+  name String // Display name in the builder
+
+  // Builder data (JSON stored canvas state)
+  // Contains the page element and all its descendants
+  // Structure: { elements: { [id]: {...} }, rootIds: [...], ... }
+  canvasData Json? // Working/draft canvas state - saved automatically during editing
+
+  // Published canvas data (separate from working state)
+  // This is the LIVE version that visitors see
+  // Only updated when user explicitly clicks "Publish" on this page
+  // Structure: { elements: [...], publishedAt: timestamp }
+  publishedCanvasData Json? // Live/published canvas state - only updated on publish
+
+  // Publishing status (per-page, not per-website)
+  status      PageStatus @default(DRAFT)
+  publishedAt DateTime? // When this page was last published
+
+  // Ordering within the website category
+  order Int @default(0)
+
+  // ========================================================================
+  // E-COMMERCE PAGE FLAG
+  // ========================================================================
+  // SOURCE OF TRUTH: Page Ecommerce, IsEcommercePage, EcommercePage
+  // Identifies pages that are part of the E-commerce system
+  // These pages are auto-created when enableEcommerce is toggled ON
+  // and HARD DELETED when enableEcommerce is toggled OFF
+  isEcommercePage Boolean @default(false)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete - deleted pages return 404 to visitors
+
+  // ========================================================================
+  // DYNAMIC PAGE CONFIGURATION - For CMS-driven template pages
+  // ========================================================================
+  //
+  // When cmsTableId is set, this page becomes a "dynamic template" that can
+  // render at URLs like: /domain/{page.slug}/{rowId}
+  //
+  // Example: A "blog-post" page linked to a "Blog Posts" CMS table renders at:
+  // - /webprodigies/blog-post/clx123abc (row ID)
+  // - /webprodigies/blog-post/my-post-title (if cmsSlugColumnSlug is set)
+  //
+  cmsTableId        String? // The CMS table this dynamic page uses to fetch row data
+  cmsSlugColumnSlug String? // Optional: Column slug for URL-friendly paths instead of row IDs
+
+  // ========================================================================
+  // PREVIEW SCREENSHOT - For website list display
+  // ========================================================================
+  // Captured automatically when page is published via Trigger.dev task
+  // Stored in user's R2 storage - if deleted, falls back to placeholder
+  // SOURCE OF TRUTH: PagePreview, PreviewImage, WebsitePreview
+  previewImageId String?
+
+  // ========================================================================
+  // SEO METADATA - Per-page search engine optimization fields
+  // ========================================================================
+  // SOURCE OF TRUTH: PageSeo, PageMetadata, SeoFields
+  //
+  // These fields control how the page appears in search engine results
+  // and social media sharing previews (OpenGraph / Twitter Cards).
+  // When null, fallback to page name / website name.
+  //
+  metaTitle       String?  // Custom title for <title> tag and OG title (max ~60 chars recommended)
+  metaDescription String?  // Meta description for search results (max ~160 chars recommended)
+  ogImage         String?  // OpenGraph image URL for social sharing previews
+  noIndex         Boolean  @default(false) // When true, tells search engines not to index this page
+
+  // ========================================================================
+  // DYNAMIC PAGE SEO FIELD MAPPING - CMS column slugs for dynamic metadata
+  // ========================================================================
+  // SOURCE OF TRUTH: DynamicPageSeo, CmsSeoMapping, SeoFieldMapping
+  //
+  // When a page is a dynamic template (cmsTableId is set), these fields
+  // map CMS table columns to SEO metadata. Each stores a column slug
+  // from the linked CMS table whose value is used as the SEO field
+  // for that specific row/page instance.
+  //
+  // Example: seoTitleColumn = "title" means the CMS column with slug "title"
+  // provides the meta title for each dynamic page.
+  //
+  seoTitleColumn       String?  // CMS column slug → metaTitle for dynamic pages
+  seoDescriptionColumn String?  // CMS column slug → metaDescription for dynamic pages
+  seoImageColumn       String?  // CMS column slug → ogImage for dynamic pages
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  domain       Domain?      @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  website      Website      @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  cmsTable     CmsTable?    @relation(fields: [cmsTableId], references: [id], onDelete: SetNull)
+  previewImage StorageFile? @relation("PagePreviewImage", fields: [previewImageId], references: [id], onDelete: SetNull)
+
+  // Reverse relation: Domains that have this page as their default
+  domainsAsDefault Domain[] @relation("DomainDefaultPage")
+  pageViews        PageView[] // Page view analytics for this specific page
+
+  // Unique constraints
+  // Slug must be unique within a website (primary constraint)
+  @@unique([websiteId, slug])
+  @@index([organizationId])
+  @@index([domainId])
+  @@index([domainId, status]) // Fast lookups for published pages in a domain
+  @@index([websiteId])
+  @@index([websiteId, order]) // Fast ordered queries within a website
+  @@map("page")
+}
+
+enum PageStatus {
+  DRAFT // Not published - not visible to visitors
+  PUBLISHED // Live and accessible to visitors
+  ARCHIVED // Hidden from public, kept for reference
+}
+
+// ============================================================================
+// PAYMENT LINKS
+// ============================================================================
+
+model PaymentLink {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Link type and references
+  type      PaymentLinkType
+  productId String? // For PRODUCT type
+  priceId   String? // For PRICE type
+
+  // Secure, unguessable code for URL
+  code String @unique @default(cuid())
+
+  // Status
+  active Boolean @default(true)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  product      Product?      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price        ProductPrice? @relation(fields: [priceId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([organizationId])
+  @@index([code])
+  @@index([productId])
+  @@index([priceId])
+  @@map("paymentLink")
+}
+
+enum PaymentLinkType {
+  PRODUCT // Shows all prices for a product
+  PRICE // Direct link to specific price
+}
+
+// ============================================================================
+// TRANSACTIONS (Payment Records)
+// ============================================================================
+//
+// Represents a single purchase transaction, regardless of payment type.
+// Tracks financial amounts and payment lifecycle state.
+//
+// IMPORTANT:
+// - DB is the source of truth for all transaction data
+// - Stripe webhook amounts are authoritative for updates
+// - Refund state is tracked separately via PaymentRefund table
+// - Payment state is independent from refund state
+
+model Transaction {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Customer/Lead reference
+  leadId String?
+
+  // === FINANCIAL TRACKING (Source of Truth in DB) ===
+  // originalAmount: The original purchase price - NEVER changes after creation
+  // paidAmount: Total successfully paid (sum from TransactionPayment records)
+  // refundedAmount: Total refunded (sum from PaymentRefund records via payments)
+  originalAmount Int // Original purchase amount in cents (immutable)
+  paidAmount     Int    @default(0) // Total paid in cents (updated from webhooks)
+  refundedAmount Int    @default(0) // Total refunded in cents (sum from payment refunds)
+  currency       String @default("usd")
+
+  // === PAYMENT LIFECYCLE STATE ===
+  // Represents the payment flow state (independent of refunds)
+  paymentStatus TransactionPaymentStatus @default(AWAITING_PAYMENT)
+
+  // === PAYMENT TYPE & TRACKING ===
+  billingType        BillingType // ONE_TIME, RECURRING, SPLIT_PAYMENT
+  totalPayments      Int         @default(1) // Expected number of payments (1 for ONE_TIME, N for SPLIT, ∞ for RECURRING)
+  successfulPayments Int         @default(0) // Count of successful payments
+
+  // === STRIPE REFERENCES ===
+  stripePaymentIntentId String? @unique // For ONE_TIME payments only
+  stripeSubscriptionId  String? @unique // For RECURRING/SPLIT_PAYMENT only
+  stripeCustomerId      String? // Stripe customer ID
+  paymentLinkId         String? // Reference to payment link if created from link
+
+  // === TIMESTAMPS ===
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  firstPaidAt DateTime? // When first payment succeeded
+  lastPaidAt  DateTime? // When most recent payment succeeded
+  fullyPaidAt DateTime? // When all payments completed (SPLIT_PAYMENT only)
+  canceledAt  DateTime? // When transaction was canceled
+
+  // === TRIAL TRACKING ===
+  // SOURCE OF TRUTH: TransactionTrialFields — tracks free trial state on the transaction
+  trialDays   Int?      // Free trial duration in days, null if no trial
+  trialEndsAt DateTime? // When the trial period ends, null if no trial
+
+  // === CHECKOUT SESSION GROUPING ===
+  // Links multiple Transactions from the same cart checkout.
+  // A mixed cart (one-time + recurring + trial items) creates separate Transactions,
+  // each with the same checkoutSessionId so they can be grouped when needed.
+  // SOURCE OF TRUTH: CheckoutSessionGrouping
+  checkoutSessionId String?
+
+  // === METADATA ===
+  // Store additional information as needed (JSON)
+  metadata Json?
+
+  // === RELATIONS ===
+  lead        Lead?                @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  paymentLink PaymentLink?         @relation(fields: [paymentLinkId], references: [id], onDelete: SetNull)
+  items       TransactionItem[]
+  payments    TransactionPayment[]
+  order       Order?               // Optional order for e-commerce purchases
+
+  @@index([organizationId])
+  @@index([organizationId, paymentStatus])
+  @@index([organizationId, billingType])
+  @@index([leadId])
+  @@index([paymentLinkId])
+  @@index([stripePaymentIntentId])
+  @@index([stripeSubscriptionId])
+  @@index([checkoutSessionId])
+  @@index([createdAt])
+  @@map("transaction")
+}
+
+model TransactionItem {
+  id            String @id @default(cuid())
+  transactionId String
+
+  // Product/Price reference
+  productId String // Reference to product
+  priceId   String // Reference to price used
+
+  // Snapshot of product details at time of purchase
+  productName  String // Product name at time of purchase
+  productImage String? // Product image URL
+  priceName    String // Price tier name
+
+  // Amount details
+  quantity    Int @default(1)
+  unitAmount  Int // Price per unit in cents
+  totalAmount Int // quantity * unitAmount
+
+  // Billing info snapshot
+  billingType   BillingType // ONE_TIME, RECURRING, SPLIT_PAYMENT
+  interval      BillingInterval?
+  intervalCount Int?
+  installments  Int? // For split payments
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@index([productId])
+  @@map("transactionItem")
+}
+
+// ============================================================================
+// TRANSACTION PAYMENT - Individual payment records
+// ============================================================================
+//
+// Each successful payment creates one record.
+// For subscriptions/split payments, multiple records created over time.
+//
+// IMPORTANT:
+// - amount: Authoritative from Stripe webhooks (invoice.amount_paid or paymentIntent.amount_received)
+// - refundedAmount: Sum of all PaymentRefund records for this payment
+// - Status only tracks payment success/failure, NOT refund state
+// - Refund state determined by refundedAmount and PaymentRefund relation
+
+model TransactionPayment {
+  id            String @id @default(cuid())
+  transactionId String
+
+  // === PAYMENT DETAILS (Authoritative from Stripe) ===
+  amount         Int // Payment amount from Stripe in cents (source of truth)
+  refundedAmount Int    @default(0) // Sum of all refunds for this payment in cents
+  currency       String @default("usd")
+
+  // === PAYMENT STATE ===
+  // Note: Status only tracks payment success/failure, NOT refund state
+  status        PaymentStatus @default(PENDING)
+  paymentNumber Int // Sequence: 1, 2, 3... (for installments/recurring)
+
+  // === STRIPE REFERENCES ===
+  stripePaymentIntentId String? @unique // From invoice or direct payment
+  stripeInvoiceId       String? @unique // For RECURRING/SPLIT_PAYMENT
+  stripeChargeId        String? @unique // Stripe charge ID (for refund tracking)
+
+  // === TIMESTAMPS ===
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  paidAt     DateTime? // When payment succeeded
+  failedAt   DateTime? // When payment failed
+  refundedAt DateTime? // When first refund occurred
+
+  // === FAILURE INFO ===
+  failureReason String? // Reason for payment failure
+
+  // === RELATIONS ===
+  transaction Transaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  refunds     PaymentRefund[] // All refund events for this payment
+  invoice     Invoice?        // Invoice generated from this payment receipt (optional, 1:1)
+
+  @@index([transactionId])
+  @@index([stripePaymentIntentId])
+  @@index([stripeInvoiceId])
+  @@index([stripeChargeId])
+  @@map("transactionPayment")
+}
+
+// ============================================================================
+// PAYMENT REFUND - Individual refund events
+// ============================================================================
+//
+// Tracks EACH refund operation separately.
+// Allows complete refund history and multiple partial refunds on same payment.
+//
+// IMPORTANT:
+// - Each Stripe refund creates one record (identified by stripeRefundId)
+// - payment.refundedAmount is the SUM of all PaymentRefund.amount for that payment
+// - transaction.refundedAmount is the SUM of all payment.refundedAmount
+// - This ensures idempotency and accurate tracking
+
+model PaymentRefund {
+  id        String @id @default(cuid())
+  paymentId String
+
+  // === REFUND DETAILS (From Stripe) ===
+  amount   Int // Refund amount from Stripe in cents
+  currency String  @default("usd")
+  reason   String? // Refund reason: duplicate, fraudulent, requested_by_customer
+
+  // === STRIPE REFERENCE ===
+  stripeRefundId String @unique // Stripe refund ID (re_xxx) - ensures idempotency
+
+  // === TIMESTAMPS ===
+  createdAt   DateTime  @default(now())
+  processedAt DateTime? // When Stripe processed the refund
+
+  // === RELATIONS ===
+  payment TransactionPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([stripeRefundId])
+  @@map("paymentRefund")
+}
+
+// ============================================================================
+// TRANSACTION PAYMENT STATUS
+// ============================================================================
+//
+// Represents the payment lifecycle state of a transaction.
+// This is INDEPENDENT of refund state - a transaction can be PAID and have refunds.
+
+// SOURCE OF TRUTH: TransactionPaymentStatus
+enum TransactionPaymentStatus {
+  AWAITING_PAYMENT // Waiting for first payment
+  TRIALING // Free trial active — customer has not been charged yet
+  PARTIALLY_PAID // Some payments made (SPLIT_PAYMENT only)
+  PAID // All payments completed
+  ACTIVE // Active subscription (RECURRING only)
+  FAILED // Payment failed
+  CANCELED // Canceled by user/admin
+  DISPUTED // Chargeback/dispute occurred
+}
+
+// ============================================================================
+// INDIVIDUAL PAYMENT STATUS
+// ============================================================================
+//
+// Represents the state of an individual payment.
+// Note: Refund state is tracked separately via PaymentRefund table.
+
+enum PaymentStatus {
+  PENDING // Payment initiated
+  PROCESSING // Payment processing
+  SUCCEEDED // Payment succeeded
+  FAILED // Payment failed
+}
+
+// ============================================================================
+// ORDER FULFILLMENT STATUS
+// ============================================================================
+//
+// Tracks the shipping/fulfillment lifecycle of an order.
+// Independent of payment status - an order can be PAID but UNFULFILLED.
+
+enum FulfillmentStatus {
+  UNFULFILLED        // Order placed, not yet shipped
+  PARTIALLY_FULFILLED // Some items shipped (for multi-item orders)
+  FULFILLED          // All items shipped/delivered
+  CANCELED           // Order canceled, no fulfillment needed
+}
+
+// ============================================================================
+// INVENTORY CHANGE REASON
+// ============================================================================
+//
+// Categorizes why inventory changed for audit trail purposes.
+
+enum InventoryChangeReason {
+  SALE              // Decremented due to successful order payment
+  REFUND            // Incremented due to order refund
+  MANUAL_ADJUSTMENT // Admin manually adjusted quantity
+  RESTOCK           // Inventory restocked/replenished
+  CORRECTION        // Inventory correction (count discrepancy)
+}
+
+// ============================================================================
+// INVENTORY HISTORY - Audit trail for inventory changes
+// ============================================================================
+//
+// Every inventory change creates a record for full audit trail.
+// This allows merchants to track exactly how inventory changed over time.
+//
+// SOURCE OF TRUTH: InventoryHistory
+
+model InventoryHistory {
+  id             String @id @default(cuid())
+  productId      String
+  organizationId String
+
+  // Quantity tracking
+  previousQuantity Int                   // Quantity before change
+  newQuantity      Int                   // Quantity after change
+  change           Int                   // Delta (+10 or -2)
+  reason           InventoryChangeReason // Why the change occurred
+
+  // Optional context
+  referenceId String? // e.g., transactionId for SALE/REFUND
+  note        String? // Human-readable note for the change
+  createdBy   String? // userId who made the change (null for system changes)
+
+  // Timestamp
+  createdAt DateTime @default(now())
+
+  // Relations
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([organizationId])
+  @@index([productId, createdAt])
+  @@index([createdAt])
+  @@map("inventoryHistory")
+}
+
+// ============================================================================
+// ORDER NOTES - Timeline and comments for orders
+// ============================================================================
+//
+// Allows merchants to add notes and track order timeline.
+// Similar to Shopify's order notes/timeline feature.
+//
+// SOURCE OF TRUTH: OrderNote
+
+// ============================================================================
+// ORDER (E-commerce Order Entity)
+// ============================================================================
+//
+// SOURCE OF TRUTH: Order
+// Represents an e-commerce order that requires fulfillment.
+// IMPORTANT: Not all transactions are orders!
+// - Orders are created specifically for e-commerce/physical products
+// - A Transaction (payment record) gets attached to an Order
+// - Another AI agent or checkout process creates orders when appropriate
+//
+model Order {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // === TRANSACTION REFERENCE ===
+  // The payment for this order (optional - payment may come later)
+  transactionId String? @unique
+
+  // === ORDER STATUS ===
+  // Tracks the overall order state
+  status OrderStatus @default(PENDING)
+
+  // === FULFILLMENT TRACKING ===
+  // SOURCE OF TRUTH: OrderFulfillment
+  fulfillmentStatus FulfillmentStatus @default(UNFULFILLED)
+  fulfilledAt       DateTime?         // When order was marked as fulfilled
+  shippingCarrier   String?           // e.g., "UPS", "FedEx", "USPS", "DHL"
+  trackingNumber    String?           // Carrier tracking number
+  trackingUrl       String?           // Full tracking URL for customer
+
+  // === SHIPPING ADDRESS ===
+  // Snapshot of shipping address at time of order
+  shippingName    String? // Recipient name
+  shippingLine1   String? // Street address line 1
+  shippingLine2   String? // Street address line 2
+  shippingCity    String?
+  shippingState   String?
+  shippingZip     String?
+  shippingCountry String?
+
+  // === TIMESTAMPS ===
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // === METADATA ===
+  metadata Json?
+
+  // === RELATIONS ===
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transaction  Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  notes        OrderNote[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, fulfillmentStatus])
+  @@index([transactionId])
+  @@index([createdAt])
+  @@map("order")
+}
+
+// Order status enum
+enum OrderStatus {
+  PENDING          // Order created, awaiting payment
+  CONFIRMED        // Payment received, ready to fulfill
+  PROCESSING       // Order is being prepared
+  SHIPPED          // Order has been shipped
+  DELIVERED        // Order delivered to customer
+  CANCELED         // Order was canceled
+  REFUNDED         // Order was refunded
+}
+
+model OrderNote {
+  id      String @id @default(cuid())
+  orderId String
+
+  // Note content
+  content    String  // The note text
+  isInternal Boolean @default(true) // true = internal only, false = visible to customer
+
+  // Who added the note
+  createdBy String // userId who created the note
+
+  // Timestamp
+  createdAt DateTime @default(now())
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([orderId, createdAt])
+  @@map("orderNote")
+}
+
+// ============================================================================
+// CMS (CONTENT MANAGEMENT SYSTEM)
+// ============================================================================
+//
+// The CMS feature allows users to create custom data tables with dynamic columns.
+// Tables are scoped to an organization and can be used across all websites.
+//
+// KEY CONCEPTS:
+// - CmsTable: A collection/table definition (like a spreadsheet)
+// - CmsColumn: Schema definition for table columns (field types)
+// - CmsRow: Actual data records stored as JSON values
+//
+// FUTURE USE:
+// - CMS data will be wirable to website components (cards, lists, etc.)
+// - Column slugs serve as keys for property binding
+
+// ============================================================================
+// CMS TABLE MODEL
+// ============================================================================
+//
+// Represents a user-created data table/collection.
+// Organization-wide scope allows reusing data across multiple websites.
+
+model CmsTable {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Table identification
+  name        String // Display name (e.g., "Blog Posts", "Products", "Team Members")
+  slug        String // URL-safe identifier for API access
+  description String? // Optional description for internal reference
+  icon        String? // Emoji or icon identifier (e.g., "📝", "package")
+
+  // Ordering for UI display
+  order Int @default(0)
+
+  // System table flags - for Ecommerce store sync
+  // WHY: Some tables are auto-created from ecommerce stores and cannot be edited/deleted from CMS
+  isSystemTable Boolean @default(false) // True = protected from edit/delete in CMS UI
+  sourceStoreId String? // Links to the ecommerce store this table syncs with
+
+  // Public access flag - for published website CMS data
+  // WHY: Published websites need to display CMS data without authentication
+  // HOW: When true, this table's rows can be read via the public endpoint (no auth required)
+  // SECURITY: Only READ access is granted - write operations always require authentication
+  // DEFAULT: true - CMS tables are public by default for website content display
+  isPublic Boolean @default(true) // True = rows readable without auth on published pages
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sourceStore  Store?       @relation(fields: [sourceStoreId], references: [id], onDelete: Cascade)
+  columns      CmsColumn[]
+  rows         CmsRow[]
+  dynamicPages Page[] // Pages using this table as their dynamic data source
+
+  @@unique([organizationId, slug])
+  @@unique([sourceStoreId]) // Each store can only have one CMS table
+  @@index([organizationId])
+  @@index([organizationId, order])
+  @@index([sourceStoreId])
+  @@map("cmsTable")
+}
+
+// ============================================================================
+// CMS COLUMN MODEL
+// ============================================================================
+//
+// Defines the schema/structure for a table column.
+// Each column has a type that determines how data is stored and displayed.
+//
+// COLUMN TYPES:
+// - TEXT: Single-line text input
+// - NUMBER: Numeric values (integers or decimals)
+// - BOOLEAN: True/false toggle
+// - MULTISELECT: Array of predefined tag options
+// - DATE: Date picker (stored as ISO string)
+// - DATE_CREATED: Auto-populated on row creation (read-only)
+// - DATE_UPDATED: Auto-populated on row update (read-only)
+// - IMAGE_URL: URL to an image with preview support
+
+model CmsColumn {
+  id      String @id @default(cuid())
+  tableId String
+
+  // Column identification
+  name       String // Display name (e.g., "Title", "Price", "Published")
+  slug       String // Key used in row values and for property binding
+  columnType CmsColumnType
+
+  // Column configuration
+  required     Boolean @default(false) // Whether this field is required
+  defaultValue String? // Default value for new rows
+
+  // Type-specific options stored as JSON
+  // For MULTISELECT: ["Option 1", "Option 2", "Option 3"]
+  // For NUMBER: { min?: number, max?: number, decimals?: number }
+  options Json?
+
+  // Ordering for UI display
+  order Int @default(0)
+
+  // System column flag — marks columns auto-created by ecommerce store sync
+  // WHY: System columns (product_name, price, etc.) are mandatory for store functionality
+  // and must NOT be deleted or modified by users. Custom columns added by users will have
+  // isSystemColumn = false and can be freely edited/deleted even on system tables.
+  isSystemColumn Boolean @default(false)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  table CmsTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([tableId, slug])
+  @@index([tableId])
+  @@index([tableId, order])
+  @@map("cmsColumn")
+}
+
+// ============================================================================
+// CMS ROW MODEL
+// ============================================================================
+//
+// Stores actual data records for a CMS table.
+// Values are stored as JSON with column slugs as keys.
+//
+// EXAMPLE VALUES:
+// {
+//   "title": "My Blog Post",
+//   "views": 1234,
+//   "published": true,
+//   "tags": ["tech", "tutorial"],
+//   "featuredImage": "https://example.com/image.jpg"
+// }
+//
+// Note: DATE_CREATED and DATE_UPDATED columns use createdAt/updatedAt timestamps
+
+model CmsRow {
+  id      String @id @default(cuid())
+  tableId String
+
+  // Row data as JSON object { columnSlug: value, ... }
+  values Json
+
+  // Ordering for manual row sorting (if needed)
+  order Int @default(0)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  table CmsTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId])
+  @@index([tableId, createdAt])
+  @@index([tableId, order])
+  @@map("cmsRow")
+}
+
+// ============================================================================
+// CMS COLUMN TYPE ENUM
+// ============================================================================
+//
+// Defines the available data types for CMS columns.
+// Each type determines input UI, validation, and storage format.
+
+enum CmsColumnType {
+  TEXT // Single-line text input
+  NUMBER // Numeric value (integer or decimal)
+  BOOLEAN // True/false toggle
+  MULTISELECT // Array of predefined options
+  DATE // Date picker (ISO string)
+  DATE_CREATED // Auto-populated creation timestamp (read-only)
+  DATE_UPDATED // Auto-populated update timestamp (read-only)
+  IMAGE_URL // URL with image preview
+  GALLERY // Multiple image URLs (gallery)
+  COLOR // Color picker (hex value or 'transparent')
+  RICH_TEXT // Formatted text with headings, lists, and more
+}
+
+// ============================================================================
+// FILE STORAGE SYSTEM
+// ============================================================================
+//
+// Google Drive-style file storage with folders and nested folder support.
+// Files can be uploaded as PUBLIC or PRIVATE with different access controls.
+//
+// KEY CONCEPTS:
+// - StorageFolder: Container for organizing files (supports nesting)
+// - StorageFile: Individual file with metadata and privacy controls
+//
+// PRIVACY MODEL:
+// - PRIVATE: Only accessible to organization members (internal use)
+// - PUBLIC: Accessible to anyone with the URL (digital products, downloads)
+//
+// FUTURE EXTENSIONS:
+// - AUTHENTICATED: Only accessible to authenticated leads/students (courses)
+// - PURCHASED: Only accessible to users who purchased a specific product
+
+// ============================================================================
+// STORAGE FOLDER MODEL
+// ============================================================================
+//
+// Represents a folder in the file storage system.
+// Supports nested folders via self-referencing parentId.
+//
+// NESTING:
+// - parentId = null → Root-level folder
+// - parentId = folderId → Nested inside another folder
+// - path: Cached breadcrumb path for fast UI rendering (e.g., "/Documents/Projects")
+//
+// FOLDER STRUCTURE EXAMPLE:
+// Root (null parentId)
+//   ├─ Documents (parentId = null)
+//   │   ├─ Contracts (parentId = Documents.id)
+//   │   └─ Invoices (parentId = Documents.id)
+//   └─ Images (parentId = null)
+//       └─ Products (parentId = Images.id)
+
+model StorageFolder {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Folder identification
+  name String // Display name (e.g., "Documents", "Product Images")
+
+  // Nesting support (self-referencing)
+  parentId String? // null = root level, otherwise parent folder ID
+
+  // Cached path for breadcrumb UI (denormalized for performance)
+  // Format: "/parent1/parent2/current" or "/" for root folders
+  path String @default("/")
+
+  // Color/icon customization
+  color String? // Hex color for folder (e.g., "#3b82f6")
+  icon  String? // Emoji or icon identifier
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete (moves to trash)
+
+  // Scheduled hard deletion (Trigger.dev)
+  // When folder is trashed, a task is scheduled to hard delete after 30 days
+  // Store the run ID so we can cancel if user restores
+  scheduledDeletionRunId String? // Trigger.dev run ID for scheduled hard delete
+
+  // Relations
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       StorageFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children     StorageFolder[] @relation("FolderHierarchy")
+  files        StorageFile[]
+
+  @@index([organizationId])
+  @@index([organizationId, parentId])
+  @@index([organizationId, deletedAt]) // For trash queries
+  @@index([parentId])
+  @@map("storageFolder")
+}
+
+// ============================================================================
+// STORAGE FILE MODEL
+// ============================================================================
+//
+// Represents an uploaded file in the storage system.
+// Stores metadata, Cloudflare R2 references, and privacy settings.
+//
+// FILE TYPES SUPPORTED:
+// - Images: jpg, jpeg, png, gif, webp, svg, ico
+// - Videos: mp4, mov, avi, mkv, webm
+// - Documents: pdf, doc, docx, xls, xlsx, ppt, pptx
+// - Archives: zip, rar, 7z, tar, gz
+// - Other: Any file type with proper mime detection
+//
+// STORAGE ARCHITECTURE:
+// - Files are stored in Cloudflare R2
+// - privateKey: The R2 object key (internal reference)
+// - publicUrl: Direct URL for PUBLIC files (null for PRIVATE)
+// - thumbnailUrl: Generated thumbnail for images/videos
+
+model StorageFile {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // File identification
+  name        String // Original filename (e.g., "document.pdf")
+  displayName String? // Optional custom display name
+
+  // File metadata
+  mimeType     String // MIME type (e.g., "image/png", "application/pdf")
+  size         Int // File size in bytes
+  extension    String // File extension without dot (e.g., "pdf", "png")
+  fileCategory FileCategory // HIGH-LEVEL category for UI grouping
+
+  // Storage references (Cloudflare R2)
+  storageKey   String  @unique // R2 object key (e.g., "org_123/files/abc123.pdf")
+  publicUrl    String? // Public URL for PUBLIC files (CDN URL)
+  thumbnailKey String? // R2 key for generated thumbnail
+  thumbnailUrl String? // Public URL for thumbnail
+
+  // Privacy controls (critical for digital products)
+  visibility FileVisibility @default(PRIVATE)
+
+  // Folder organization (null = root level, like "My Drive")
+  folderId String?
+
+  // File dimensions (for images/videos)
+  width  Int? // Image/video width in pixels
+  height Int? // Image/video height in pixels
+
+  // Video/audio metadata
+  duration Float? // Duration in seconds (for video/audio)
+
+  // ============================================================================
+  // HLS VIDEO PROCESSING FIELDS
+  // ============================================================================
+  // For course videos, we convert to HLS format for adaptive bitrate streaming.
+  // This enables smooth playback on any device/connection speed.
+
+  // Processing status - tracks transcoding progress
+  videoProcessingStatus VideoProcessingStatus @default(NONE)
+
+  // Error message if processing failed
+  processingError String?
+
+  // Progress percentage (0-100) during processing
+  processingProgress Int?
+
+  // HLS manifest - points to master.m3u8 playlist
+  hlsManifestKey String? // R2 key: org-{id}/hls/{fileId}/master.m3u8
+  hlsManifestUrl String? // CDN URL for HLS playback (PUBLIC videos only)
+
+  // Poster thumbnail generated from video (at ~25% duration)
+  posterKey String? // R2 key for poster image
+  posterUrl String? // CDN URL for poster/thumbnail
+
+  // Trigger.dev run ID for processing task (for cancellation/status)
+  processingRunId String?
+
+  // Quality variants available after processing (e.g., ["1080p", "720p", "480p", "360p"])
+  hlsQualities String[]
+
+  // Original video codec/format info (populated during processing)
+  videoCodec   String?
+  audioCodec   String?
+  videoBitrate Int? // Original bitrate in kbps
+
+  // Upload tracking
+  uploadedById String? // User ID who uploaded (for audit)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete (moves to trash)
+
+  // Scheduled hard deletion (Trigger.dev)
+  // When file is trashed individually, a task is scheduled to hard delete after 30 days
+  // Files deleted via folder deletion inherit the folder's scheduled deletion
+  scheduledDeletionRunId String? // Trigger.dev run ID for scheduled hard delete
+
+  // Relations
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folder       StorageFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  // Reverse relation: Pages using this file as preview screenshot
+  pagesAsPreview Page[] @relation("PagePreviewImage")
+
+  @@index([organizationId])
+  @@index([organizationId, folderId])
+  @@index([organizationId, visibility])
+  @@index([organizationId, fileCategory])
+  @@index([organizationId, deletedAt]) // For trash queries
+  @@index([folderId])
+  @@index([storageKey])
+  @@map("storageFile")
+}
+
+// ============================================================================
+// FILE VISIBILITY ENUM
+// ============================================================================
+//
+// Controls who can access the file.
+// This is critical for digital products and secure file sharing.
+
+enum FileVisibility {
+  PRIVATE // Only organization members can access (internal files)
+  PUBLIC // Anyone with the URL can access (digital products, downloads)
+  // FUTURE: AUTHENTICATED - Only authenticated leads/students
+  // FUTURE: PURCHASED - Only users who purchased a specific product
+}
+
+// ============================================================================
+// FILE CATEGORY ENUM
+// ============================================================================
+//
+// High-level categorization for UI grouping and filtering.
+// Determines which icon/preview to show in the file manager.
+
+enum FileCategory {
+  IMAGE // jpg, png, gif, webp, svg, ico
+  VIDEO // mp4, mov, avi, mkv, webm
+  AUDIO // mp3, wav, ogg, flac, aac
+  DOCUMENT // pdf, doc, docx, xls, xlsx, ppt, pptx, txt
+  ARCHIVE // zip, rar, 7z, tar, gz
+  OTHER // Any other file type
+}
+
+// ============================================================================
+// VIDEO PROCESSING STATUS ENUM
+// ============================================================================
+//
+// Tracks the HLS transcoding status for video files.
+// Used to show processing progress and determine playback availability.
+
+enum VideoProcessingStatus {
+  NONE // Not a video or processing not needed (images, docs, etc.)
+  PENDING // Queued for processing (waiting in Trigger.dev queue)
+  PROCESSING // Currently transcoding (FFmpeg running)
+  COMPLETED // HLS output ready (can be played)
+  FAILED // Processing failed (check processingError field)
+}
+
+// ============================================================================
+// FORM BUILDER SYSTEM
+// ============================================================================
+//
+// Google Drive-style form organization with folders and nested folder support.
+// Forms can be categorized into folders for better organization.
+//
+// KEY CONCEPTS:
+// - FormFolder: Container for organizing forms (supports nesting)
+// - Form: Individual form definition with fields configuration
+//
+// ARCHITECTURE:
+// - Forms are stored as JSON configuration (fields, validation, styling)
+// - Submissions are stored separately (linked to leads)
+// - Folders support nesting via self-referencing parentId
+
+// ============================================================================
+// FORM FOLDER MODEL
+// ============================================================================
+//
+// Represents a folder in the form organization system.
+// Supports nested folders via self-referencing parentId.
+//
+// NESTING:
+// - parentId = null → Root-level folder
+// - parentId = folderId → Nested inside another folder
+// - path: Cached breadcrumb path for fast UI rendering
+
+model FormFolder {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Folder identification
+  name String // Display name (e.g., "Marketing Forms", "Contact Forms")
+
+  // Nesting support (self-referencing)
+  parentId String? // null = root level, otherwise parent folder ID
+
+  // Cached path for breadcrumb UI (denormalized for performance)
+  path String @default("/")
+
+  // Color/icon customization
+  color String? // Hex color for folder (e.g., "#3b82f6")
+  icon  String? // Emoji or icon identifier
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       FormFolder?  @relation("FormFolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children     FormFolder[] @relation("FormFolderHierarchy")
+  forms        Form[]
+
+  @@index([organizationId])
+  @@index([organizationId, parentId])
+  @@index([organizationId, deletedAt])
+  @@index([parentId])
+  @@map("formFolder")
+}
+
+// ============================================================================
+// FORM MODEL
+// ============================================================================
+//
+// Represents a fully dynamic form definition with fields, validation,
+// conditional logic (logic gates), and styling. Users have complete freedom
+// to build any type of form they need.
+//
+// FORM DISTRIBUTION:
+// - Embed: Generate embed code for external websites/apps
+// - Website Builder: Use form inside the visual builder (linked via ID)
+// - Direct Link: Shareable link for standalone form access
+//
+// ARCHITECTURE:
+// - config JSON contains all form builder data (fields, logic gates, styling)
+// - No hardcoded form types - completely user-driven
+// - Supports conditional field logic (show/hide based on other field values)
+
+model Form {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Form identification
+  name        String // Display name (user-defined)
+  description String? // Optional description for internal reference
+  slug        String // URL-safe identifier for direct links and embedding
+
+  // Form configuration (JSON) - Fully dynamic, no restrictions
+  // Contains: fields[], logicGates[], styling, settings
+  // Fields have their own validation rules, types, and options
+  // Logic gates define conditional show/hide rules between fields
+  config Json?
+
+  // Form status
+  status FormStatus @default(DRAFT)
+
+  // Submission settings (stored in config, but key ones at top level for queries)
+  submitButtonText String   @default("Submit")
+  successMessage   String   @default("Thank you for your submission!")
+  redirectUrl      String? // Optional redirect after submission
+  notifyEmails     String[] // Email addresses to notify on submission
+
+  // Spam protection
+  enableCaptcha   Boolean @default(false)
+  submissionLimit Int? // Max submissions (null = unlimited)
+
+  // Folder organization (null = root level)
+  folderId String?
+
+  // Analytics
+  viewCount       Int @default(0)
+  submissionCount Int @default(0)
+
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime? // When form was last published
+
+  // Relations
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folder       FormFolder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  submissions  FormSubmission[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([organizationId, folderId])
+  @@index([organizationId, status])
+  @@index([folderId])
+  @@map("form")
+}
+
+// ============================================================================
+// FORM SUBMISSION MODEL
+// ============================================================================
+//
+// Stores individual form submissions with all field values.
+// Links to leads for CRM integration when applicable.
+
+model FormSubmission {
+  id     String @id @default(cuid())
+  formId String
+
+  // Submission data (JSON)
+  // Contains: { [fieldId]: value, ... }
+  // Stores exactly what user submitted based on form config
+  data Json
+
+  // Lead linking (optional - connects submission to CRM)
+  leadId String?
+
+  // Submission metadata (for analytics and spam detection)
+  ipAddress   String?
+  userAgent   String?
+  referrerUrl String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+  @@index([formId, createdAt])
+  @@index([leadId])
+  @@map("formSubmission")
+}
+
+// ============================================================================
+// FORM STATUS ENUM
+// ============================================================================
+//
+// Simple status for form availability (not controlling what users can do)
+
+enum FormStatus {
+  DRAFT // Not published - being edited
+  PUBLISHED // Live and accepting submissions
+  PAUSED // Temporarily paused (not accepting submissions)
+  ARCHIVED // Hidden from list, kept for reference
+}
+
+// ============================================================================
+// EMAIL DOMAIN MODEL (Resend Integration)
+// ============================================================================
+//
+// Stores custom email domains connected via Resend for sending emails
+// from the organization's own domain (e.g., support@theirdomain.com)
+//
+// FLOW:
+// 1. User adds domain -> Creates record with status NOT_STARTED
+// 2. Resend returns DNS records -> Stored in dnsRecords JSON
+// 3. User adds DNS records at their provider
+// 4. User clicks verify -> Status updates based on Resend response
+// 5. Once VERIFIED, org can send emails from this domain
+
+model EmailDomain {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Domain info - GLOBALLY UNIQUE (only one org can claim a domain for email)
+  name   String @unique // e.g., "example.com" - unique across ALL organizations
+  region String @default("us-east-1") // Resend region
+
+  // Resend integration
+  resendDomainId String            @unique // Resend's domain ID for API calls
+  status         EmailDomainStatus @default(NOT_STARTED)
+
+  // DNS Records (JSON array from Resend)
+  // Structure: [{ record: "SPF", name: "...", type: "TXT", value: "...", status: "pending" }, ...]
+  dnsRecords Json?
+
+  // Capabilities
+  sendingEnabled   Boolean @default(true)
+  receivingEnabled Boolean @default(false)
+
+  // Email Tracking Settings (Resend domain-level tracking)
+  // WHY: Track email opens and clicks for delivery analytics
+  // HOW: These settings are synced to Resend via PATCH /domains/:domain_id
+  // SOURCE OF TRUTH KEYWORDS: EmailTracking, OpenTracking, ClickTracking
+  openTracking  Boolean @default(false) // Track when recipients open emails
+  clickTracking Boolean @default(false) // Track when recipients click links
+
+  // Timestamps
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  verifiedAt DateTime? // When domain was fully verified
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Note: name has @unique above for global uniqueness
+  @@index([organizationId])
+  @@index([resendDomainId])
+  @@map("emailDomain")
+}
+
+// Email Domain Status (matches Resend API statuses)
+enum EmailDomainStatus {
+  NOT_STARTED // DNS records not added yet
+  PENDING // DNS records added, verification in progress
+  VERIFIED // Fully verified, ready to send
+  FAILED // Verification failed
+  TEMPORARY_FAILURE // Temporary DNS issue
+}
+
+// ============================================================================
+// EMAIL TEMPLATE MODEL (React Email Builder)
+// ============================================================================
+//
+// Stores reusable email templates created with the block-based email builder.
+// Templates can include variable placeholders that are replaced at send time.
+//
+// SOURCE OF TRUTH KEYWORDS: EmailTemplate, EmailTemplateBlock, EmailBuilder
+//
+// TEMPLATE STRUCTURE:
+// - content: JSON array of blocks (heading, text, button, image, divider, spacer)
+// - Each block has type and props for customization
+// - Variables use {{lead.firstName}}, {{organization.name}}, etc. syntax
+//
+// USAGE:
+// - Select template when composing email from inbox
+// - Variables are replaced using existing interpolate() system
+// - Rendered to HTML using @react-email/render
+
+model EmailTemplate {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Template metadata
+  name        String // Display name (e.g., "Welcome Email", "Follow-up")
+  description String? // Optional description for internal reference
+  subject     String // Default email subject line (supports variables)
+
+  // Template content (JSON array of blocks)
+  // Structure: EmailBlock[] - array of block objects
+  // Each block: { id, type, props: {...} }
+  content Json
+
+  // Folder organization (null = root level)
+  folderId String?
+  folder   EmailTemplateFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  // Usage tracking
+  usageCount Int       @default(0)
+  lastUsedAt DateTime?
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, folderId])
+  @@index([organizationId, deletedAt])
+  @@map("emailTemplate")
+}
+
+// ============================================================================
+// EMAIL TEMPLATE FOLDER
+// ============================================================================
+//
+// Folder organization for email templates (similar to StorageFolder).
+// Supports nested folders with self-referencing relation.
+//
+// SOURCE OF TRUTH KEYWORDS: EmailTemplateFolder, TemplateFolderHierarchy
+//
+
+model EmailTemplateFolder {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Folder metadata
+  name  String // Display name (e.g., "Welcome Series", "Marketing")
+  color String? // Optional hex color for visual distinction
+
+  // Folder hierarchy (self-referencing for nesting)
+  parentId String?
+  parent   EmailTemplateFolder?  @relation("TemplateFolderHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children EmailTemplateFolder[] @relation("TemplateFolderHierarchy")
+
+  // Templates in this folder
+  templates EmailTemplate[]
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, parentId])
+  @@index([organizationId, deletedAt])
+  @@map("emailTemplateFolder")
+}
+
+// ============================================================================
+// CONTRACT SYSTEM
+// ============================================================================
+//
+// Legal contract and agreement management with folder organization.
+// Contracts use a Lexical editor for rich-text content with signature
+// and input field decorator nodes.
+//
+// SOURCE OF TRUTH KEYWORDS: Contract, ContractFolder, ContractStatus
+//
+
+// Contract lifecycle status
+enum ContractStatus {
+  DRAFT // Not finalized — still being edited
+  ACTIVE // Published and ready for use / signing (used for templates)
+  SENT // Contract instance sent to recipient for signing
+  COMPLETED // Contract fully signed and completed
+  ARCHIVED // No longer in active use, kept for reference
+}
+
+model Contract {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Contract metadata
+  name        String // Display name (e.g., "Service Agreement", "NDA")
+  description String? // Optional description for internal reference
+
+  // Contract content (Lexical editor JSON state)
+  // Structure: SerializedEditorState — Lexical root node tree
+  content Json?
+
+  // Local contract variables — user-defined name/value pairs
+  // Structure: Array of { id: string, name: string, value: string }
+  // Templates carry variables to contract instances via createFromTemplate
+  variables Json?
+
+  // Contract lifecycle status
+  status ContractStatus @default(DRAFT)
+
+  // Template flag — true means this is a reusable template, false means an actual contract instance
+  isTemplate Boolean @default(false)
+
+  // ID of the template this instance was created from (informational only, not a FK)
+  // Instances are independent copies so this is not a relation
+  templateId String?
+
+  // Folder organization (null = root level)
+  folderId String?
+  folder   ContractFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  // Recipient — the lead this contract is sent to for signing
+  recipientId String?
+  recipient   Lead?   @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+
+  // Public signing link — unique token generated when the contract is sent
+  accessToken String? @unique
+
+  // Signee data — filled form fields + signature data after the recipient signs
+  // Structure: { fieldValues: Record<string, string>, signatureStates: Record<string, boolean>, submittedAt: string }
+  signeeData Json?
+
+  // Timestamp when the contract was sent to the recipient
+  sentAt DateTime?
+
+  // Timestamp when the recipient signed the contract
+  signedAt DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, folderId])
+  @@index([organizationId, status])
+  @@index([organizationId, isTemplate])
+  @@index([accessToken])
+  @@map("contract")
+}
+
+// ============================================================================
+// CONTRACT FOLDER
+// ============================================================================
+//
+// Folder organization for contracts (same pattern as EmailTemplateFolder).
+// Supports nested folders with self-referencing relation.
+//
+// SOURCE OF TRUTH KEYWORDS: ContractFolder, ContractFolderHierarchy
+//
+
+model ContractFolder {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Folder metadata
+  name  String // Display name (e.g., "NDAs", "Service Agreements")
+  color String? // Optional hex color for visual distinction
+
+  // Folder hierarchy (self-referencing for nesting)
+  parentId String?
+  parent   ContractFolder?  @relation("ContractFolderHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children ContractFolder[] @relation("ContractFolderHierarchy")
+
+  // Contracts in this folder
+  contracts Contract[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, parentId])
+  @@map("contractFolder")
+}
+
+// ============================================================================
+// PIPELINE / KANBAN BOARD SYSTEM
+// ============================================================================
+//
+// Sales pipeline management with drag-and-drop kanban board functionality.
+// Supports multiple pipelines per organization, each with customizable lanes
+// and tickets that can be moved between lanes.
+//
+// SOURCE OF TRUTH KEYWORDS: Pipeline, PipelineLane, PipelineTicket, Kanban, SalesBoard
+//
+// ARCHITECTURE:
+// - Pipeline: Top-level container (e.g., "Sales Pipeline", "Support Queue")
+// - PipelineLane: Columns/stages (e.g., "Lead", "Qualified", "Proposal", "Won")
+// - PipelineTicket: Individual deals/items that move through lanes
+//
+// KEY FEATURES:
+// - Drag-and-drop ticket movement between lanes
+// - Lane reordering within pipeline
+// - Ticket assignment to team members
+// - Monetary value tracking per ticket
+// - Soft delete support for data recovery
+
+// ============================================================================
+// PIPELINE MODEL
+// ============================================================================
+//
+// Represents a kanban board/pipeline for tracking deals, tasks, or workflows.
+// Each organization can have multiple pipelines for different purposes.
+
+model Pipeline {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Pipeline metadata
+  name        String // Display name (e.g., "Sales Pipeline", "Support Tickets")
+  description String? // Optional description for internal reference
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lanes        PipelineLane[]
+
+  @@unique([organizationId, name]) // Pipeline names unique within org
+  @@index([organizationId])
+  @@index([organizationId, deletedAt])
+  @@map("pipeline")
+}
+
+// ============================================================================
+// PIPELINE LANE MODEL
+// ============================================================================
+//
+// Represents a column/stage within a pipeline.
+// Lanes are ordered and can be reordered via drag-and-drop.
+
+model PipelineLane {
+  id         String @id @default(cuid())
+  pipelineId String
+
+  // Lane metadata
+  name  String // Display name (e.g., "New Lead", "Qualified", "Won")
+  color String? // Hex color for visual distinction (e.g., "#3b82f6")
+  order Int // Position within pipeline (lower = further left)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  pipeline Pipeline         @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  tickets  PipelineTicket[]
+
+  @@index([pipelineId])
+  @@index([pipelineId, order])
+  @@index([pipelineId, deletedAt])
+  @@map("pipelineLane")
+}
+
+// ============================================================================
+// PIPELINE TICKET MODEL
+// ============================================================================
+//
+// Represents an individual item/deal within a pipeline lane.
+// Tickets can be moved between lanes and assigned to team members.
+
+model PipelineTicket {
+  id     String @id @default(cuid())
+  laneId String
+
+  // Ticket metadata
+  title       String // Display title (e.g., "Acme Corp Deal", "Website Redesign")
+  description String? @db.Text // Detailed description (markdown supported)
+  order       Int // Position within lane (lower = higher in list)
+
+  // Value tracking (for sales pipelines)
+  value Float? // Monetary value in dollars (e.g., 15000.00)
+
+  // Assignment
+  assignedToId String? // Member ID - who is responsible for this ticket
+
+  // Lead link - connects ticket to a lead/contact
+  leadId String? // Lead ID - optional link to a lead
+
+  // Deadline tracking
+  deadline DateTime? // Optional due date for the ticket
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  // Relations
+  lane       PipelineLane @relation(fields: [laneId], references: [id], onDelete: Cascade)
+  assignedTo Member?      @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  lead       Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([laneId])
+  @@index([laneId, order])
+  @@index([laneId, deletedAt])
+  @@index([assignedToId])
+  @@index([leadId])
+  @@map("pipelineTicket")
+}
+
+// =============================================================================
+// CALENDAR EVENTS
+// SOURCE OF TRUTH: CalendarEvent, Scheduling, Meetings, Appointments
+// =============================================================================
+
+/**
+ * CalendarEvent - Scheduled events, meetings, and appointments
+ * WHY: Enable scheduling functionality for managing meetings with leads,
+ * team collaboration, and appointment tracking within the organization.
+ * FEATURES:
+ * - Link to leads for sales meetings
+ * - Assign team members to events
+ * - Support for meeting URLs (Google Meet, Zoom, etc.)
+ * - Color categorization for visual organization
+ * - All-day events support
+ * HARD DELETE: Events are permanently deleted, not soft-deleted
+ */
+/**
+ * Calendar Event Status
+ * WHY: Track the lifecycle state of calendar events
+ * - PENDING: Event is scheduled but not yet confirmed
+ * - APPROVED: Event is confirmed and will take place
+ * - CANCELLED: Event was cancelled and won't take place
+ */
+enum CalendarEventStatus {
+  PENDING
+  APPROVED
+  CANCELLED
+}
+
+model CalendarEvent {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Event details
+  title       String // Event title (e.g., "Sales Call with Acme Corp")
+  description String? @db.Text // Detailed description or notes
+
+  // Event status
+  status CalendarEventStatus @default(PENDING) // Current state of the event
+
+  // Timing
+  startDate DateTime // Event start date and time
+  endDate   DateTime // Event end date and time
+  isAllDay  Boolean  @default(false) // True for all-day events
+
+  // Location and meeting info
+  location   String? // Physical location or text description
+  meetingUrl String? // Video meeting URL (Google Meet, Zoom, etc.)
+
+  // Visual categorization
+  color String @default("blue") // Color for calendar display (blue, green, purple, orange, red, pink, yellow, gray)
+
+  // Assignment - team member responsible for this event
+  assignedToId String?
+
+  // Lead link - connects event to a lead/contact for sales meetings
+  leadId String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedTo   Member?          @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  lead         Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  booking      CalendarBooking? // Link to booking if this event was created via public booking
+
+  @@index([organizationId])
+  @@index([organizationId, startDate])
+  @@index([organizationId, startDate, endDate])
+  @@index([assignedToId])
+  @@index([leadId])
+  @@map("calendarEvent")
+}
+
+// =============================================================================
+// BOOKING CALENDARS
+// SOURCE OF TRUTH: BookingCalendar, BookingAvailability, CalendarBooking
+// =============================================================================
+
+/**
+ * Booking Calendar - Represents a bookable meeting type
+ * WHY: Users can create multiple booking calendars for different meeting types
+ * (e.g., "30 min consultation", "1 hour strategy session")
+ * CUSTOMIZATION OPTIONS:
+ * - Name and description for the booking type
+ * - Duration in minutes
+ * - Buffer time before/after meetings
+ * - Color for visual display
+ * - Availability schedule via BookingAvailability
+ * HARD DELETE: Booking calendars are permanently deleted
+ */
+model BookingCalendar {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Basic info
+  name        String // Display name (e.g., "30 Minute Meeting")
+  slug        String // URL-friendly slug (e.g., "30-min-meeting")
+  description String? @db.Text // Description shown on booking page
+
+  // Meeting configuration
+  duration     Int @default(30) // Duration in minutes (15, 30, 45, 60, 90, 120)
+  bufferBefore Int @default(0) // Buffer time before meeting in minutes
+  bufferAfter  Int @default(0) // Buffer time after meeting in minutes
+
+  // Visual customization
+  color String @default("blue") // Color for display
+
+  // Location settings
+  locationType    String  @default("virtual") // "virtual", "in_person", "phone"
+  locationDetails String? // Physical address or phone instructions
+
+  // Booking limits
+  // WHY: Controls how far into the future bookers can see available dates
+  // null = unlimited (no restriction), positive integer = max days ahead
+  // SOURCE OF TRUTH KEYWORDS: MaxBookingDays, BookingLimit, AdvanceBooking
+  maxBookingDays Int? // e.g., 5 = only show next 5 days, null = unlimited
+
+  // Status
+  isActive Boolean @default(true) // Whether this calendar accepts bookings
+
+  // Default assignment
+  defaultAssigneeId String? // Optional default team member to assign bookings to
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  availability BookingAvailability[] // Weekly availability schedule (fallback if no assignees)
+  bookings     CalendarBooking[] // Bookings made through this calendar
+  assignees    BookingCalendarAssignee[] // Team members assigned to handle this calendar
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+  @@map("bookingCalendar")
+}
+
+/**
+ * Booking Availability - Defines available time slots for each day
+ * WHY: Each booking calendar can have different hours for each day of the week
+ * EXAMPLE:
+ * - Monday: 9:00 - 17:00
+ * - Tuesday: 9:00 - 17:00
+ * - Wednesday: DISABLED
+ * - Thursday: 10:00 - 16:00
+ * - etc.
+ */
+model BookingAvailability {
+  id                String @id @default(cuid())
+  bookingCalendarId String
+
+  // Day configuration (0 = Sunday, 1 = Monday, ... 6 = Saturday)
+  dayOfWeek Int // 0-6
+
+  // Time range (stored as HH:mm strings for timezone flexibility)
+  startTime String // e.g., "09:00"
+  endTime   String // e.g., "17:00"
+
+  // Whether this day is enabled for bookings
+  isEnabled Boolean @default(true)
+
+  // Relations
+  bookingCalendar BookingCalendar @relation(fields: [bookingCalendarId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingCalendarId, dayOfWeek])
+  @@index([bookingCalendarId])
+  @@map("bookingAvailability")
+}
+
+/**
+ * Member Availability - Personal working hours for team members
+ * WHY: Each team member has their own availability schedule separate from booking calendars
+ * HOW: Stores weekly availability pattern with timezone support
+ * This is the SOURCE OF TRUTH for when a team member is available to take meetings.
+ * The booking calendar's slot generation will intersect this with BookingAvailability
+ * to determine actual available slots.
+ * SOURCE OF TRUTH KEYWORDS: MemberAvailability, TeamMemberSchedule, WorkingHours
+ */
+model MemberAvailability {
+  id       String @id @default(cuid())
+  memberId String
+
+  // Day configuration (0 = Sunday, 1 = Monday, ... 6 = Saturday)
+  dayOfWeek Int // 0-6
+
+  // Time range (stored as HH:mm strings in the member's timezone)
+  startTime String // e.g., "09:00"
+  endTime   String // e.g., "17:00"
+
+  // Whether this day is enabled (member works this day)
+  isEnabled Boolean @default(true)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, dayOfWeek])
+  @@index([memberId])
+  @@map("memberAvailability")
+}
+
+/**
+ * Booking Calendar Assignee - Links team members to booking calendars
+ * WHY: A booking calendar can have multiple team members who can take meetings
+ * HOW: Many-to-many relationship between BookingCalendar and Member
+ * When generating time slots:
+ * - If a calendar has assignees, only show slots where at least ONE assignee is available
+ * - The assignee's MemberAvailability and existing calendar events determine their availability
+ * - Timezone conversion happens based on the assignee's User.timezone
+ * ROUND ROBIN: When a booking is made, the system can assign to the least busy member
+ * or let the booker choose from available team members.
+ * SOURCE OF TRUTH KEYWORDS: BookingCalendarAssignee, CalendarTeamMember, AssigneeMapping
+ */
+model BookingCalendarAssignee {
+  id                String @id @default(cuid())
+  bookingCalendarId String
+  memberId          String
+
+  // Whether this assignee is currently active for this calendar
+  isActive Boolean @default(true)
+
+  // Priority for round-robin assignment (lower = higher priority)
+  priority Int @default(0)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bookingCalendar BookingCalendar @relation(fields: [bookingCalendarId], references: [id], onDelete: Cascade)
+  member          Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingCalendarId, memberId])
+  @@index([bookingCalendarId])
+  @@index([memberId])
+  @@map("bookingCalendarAssignee")
+}
+
+/**
+ * Calendar Booking - Represents a confirmed booking made by an external user
+ * WHY: Tracks bookings made through the public booking page
+ * FLOW:
+ * 1. External user visits public booking page
+ * 2. Selects a booking calendar type
+ * 3. Picks an available date/time slot
+ * 4. Fills in their details (name, email, notes)
+ * 5. CalendarBooking is created + CalendarEvent is created for internal calendar
+ */
+model CalendarBooking {
+  id                String @id @default(cuid())
+  bookingCalendarId String
+  organizationId    String
+
+  // Booking details
+  startTime DateTime // Booked start time
+  endTime   DateTime // Booked end time (calculated from duration)
+
+  // Booker information (external person making the booking)
+  bookerName  String // Name of the person booking
+  bookerEmail String // Email of the person booking
+  bookerPhone String? // Optional phone number
+  notes       String? @db.Text // Optional notes from booker
+
+  // Status
+  status BookingStatus @default(CONFIRMED)
+
+  // Link to the internal calendar event created for this booking
+  calendarEventId String? @unique
+
+  // Trigger.dev run ID for the delayed APPOINTMENT_STARTED task
+  // Used to cancel the scheduled run if the booking is cancelled
+  scheduledStartRunId String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bookingCalendar BookingCalendar @relation(fields: [bookingCalendarId], references: [id], onDelete: Cascade)
+  calendarEvent   CalendarEvent?  @relation(fields: [calendarEventId], references: [id], onDelete: SetNull)
+
+  @@index([bookingCalendarId])
+  @@index([organizationId])
+  @@index([bookerEmail])
+  @@index([startTime])
+  @@map("calendarBooking")
+}
+
+/**
+ * Booking Status
+ * WHY: Track the state of external bookings
+ */
+enum BookingStatus {
+  CONFIRMED // Booking is confirmed
+  CANCELLED // Booking was cancelled
+  COMPLETED // Meeting has taken place
+  NO_SHOW // Booker didn't show up
+}
+
+// =============================================================================
+// ECOMMERCE STORES
+// SOURCE OF TRUTH: Store, StoreProduct, Ecommerce, ProductCatalog
+// =============================================================================
+
+model Store {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Store details
+  name        String
+  description String?
+  imageUrl    String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     StoreProduct[]
+  cmsTable     CmsTable? // Synced CMS table for this store
+
+  @@index([organizationId])
+  @@map("store")
+}
+
+model StoreProduct {
+  id        String @id @default(cuid())
+  storeId   String
+  productId String
+  priceId   String
+
+  // Ordering within store
+  order Int @default(0)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations
+  store   Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price   ProductPrice @relation(fields: [priceId], references: [id], onDelete: Cascade)
+
+  // A product can only be in a store once
+  @@unique([storeId, productId])
+  @@index([storeId])
+  @@index([productId])
+  @@index([priceId])
+  @@map("storeProduct")
+}
+
+// =============================================================================
+// CHAT WIDGETS
+// SOURCE OF TRUTH: ChatWidget, Organization, Conversation
+// =============================================================================
+
+model ChatWidget {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Widget details
+  name        String
+  description String?
+
+  // Configuration JSON - stores theme colors, behavior settings, welcome page text
+  // Structure: { theme: ChatWidgetThemeColors, behavior: ChatWidgetBehavior, welcomePage: WelcomPageConfig }
+  config Json?
+
+  // Embed security - list of allowed domains that can embed this widget
+  // Format: ["example.com", "*.example.com", "app.example.com"]
+  // Empty array or null = widget can only be used internally (not embeddable)
+  // SOURCE OF TRUTH: ChatWidgetAllowedDomains, EmbedSecurity
+  allowedDomains Json? @default("[]")
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  faqItems       ChatWidgetFAQ[]
+  updates        ChatWidgetUpdate[]
+  guestSessions  GuestSession[]  // Anonymous visitor sessions for this widget
+  websites       Website[]       // Websites that use this chat widget
+
+  @@index([organizationId])
+  @@map("chatWidget")
+}
+
+/// FAQ items for chat widget help page
+/// SOURCE OF TRUTH: ChatWidget, ChatWidgetFAQ
+model ChatWidgetFAQ {
+  id           String @id @default(cuid())
+  chatWidgetId String
+
+  // FAQ content
+  question String
+  answer   String @db.Text
+
+  // Display order
+  sortOrder Int @default(0)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  chatWidget ChatWidget @relation(fields: [chatWidgetId], references: [id], onDelete: Cascade)
+
+  @@index([chatWidgetId])
+  @@map("chatWidgetFaq")
+}
+
+/// Updates/announcements for chat widget updates page
+/// SOURCE OF TRUTH: ChatWidget, ChatWidgetUpdate
+model ChatWidgetUpdate {
+  id           String @id @default(cuid())
+  chatWidgetId String
+
+  // Update content
+  title               String
+  content             String  @db.Text // Lexical JSON content
+  featuredImage       String? // Storage URL
+  featuredImageFileId String? // Storage file ID for deletion tracking
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  chatWidget ChatWidget @relation(fields: [chatWidgetId], references: [id], onDelete: Cascade)
+
+  @@index([chatWidgetId])
+  @@map("chatWidgetUpdate")
+}
+
+// ============================================================================
+// ORGANIZATION WALLET (USAGE-BASED BILLING)
+// ============================================================================
+// SOURCE OF TRUTH: OrganizationWallet, WalletTransaction, WalletTransactionType,
+//                  WalletTransactionStatus, WalletChargeCategory
+//
+// The wallet system enables usage-based billing for organizations.
+// - Each organization has one wallet created automatically with $1 free funds
+// - Charges are deducted from the wallet (AI usage, SMS, email, storage, etc.)
+// - Auto top-up triggers when balance drops below $0 (charges $10 minimum)
+// - Manual top-ups can be done at any time (minimum $10)
+
+/// Transaction type - whether this is adding or removing funds
+/// SOURCE OF TRUTH: WalletTransactionType
+enum WalletTransactionType {
+  TOP_UP // Adding funds (manual or auto)
+  CHARGE // Deducting funds (usage)
+  REFUND // Refunding a charge
+}
+
+/// Transaction status - current state of the transaction
+/// SOURCE OF TRUTH: WalletTransactionStatus
+enum WalletTransactionStatus {
+  PENDING // Transaction initiated
+  COMPLETED // Transaction completed successfully
+  FAILED // Transaction failed
+}
+
+/// Charge category - what the charge was for
+/// SOURCE OF TRUTH: WalletChargeCategory
+enum WalletChargeCategory {
+  // Top-up categories
+  AUTO_TOP_UP // Automatic top-up when balance < $0
+  MANUAL_TOP_UP // Manual top-up by user
+  FREE_CREDIT // Free credit (e.g., initial $1)
+  REFUND // Refund of a previous charge
+
+  // Usage categories
+  AI_USAGE // AI model usage (GPT, Claude, etc.)
+  SMS // SMS messages sent
+  EMAIL // Emails sent
+  STORAGE // Storage overage
+  API_CALLS // API calls beyond free tier
+  OTHER // Miscellaneous charges
+}
+
+/// Organization wallet - stores balance and auto-top-up settings
+/// One wallet per organization, created automatically with $1 free funds
+/// SOURCE OF TRUTH: OrganizationWallet
+model OrganizationWallet {
+  id             String @id @default(cuid())
+  organizationId String @unique // One wallet per organization
+
+  // Balance in MILLICENTS (e.g., 1000 = $1.00, 10000 = $10.00)
+  // Using millicents to handle sub-cent PAYG pricing ($0.015, $0.008) without floating point issues
+  balance  Int    @default(1000) // Start with $1.00 (1000 millicents) free credit
+  currency String @default("USD")
+
+  // Auto top-up settings
+  autoTopUpEnabled   Boolean @default(true) // Enable/disable auto top-up
+  autoTopUpThreshold Int     @default(0) // Balance threshold to trigger top-up (millicents)
+  autoTopUpAmount    Int     @default(1000) // Amount to top-up (millicents) - minimum $1
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@index([organizationId])
+  @@map("organizationWallet")
+}
+
+/// Wallet transaction - individual top-ups, charges, and refunds
+/// Provides full audit trail of all wallet activity
+/// SOURCE OF TRUTH: WalletTransaction
+model WalletTransaction {
+  id       String @id @default(cuid())
+  walletId String
+
+  // Transaction details
+  type     WalletTransactionType
+  status   WalletTransactionStatus @default(PENDING)
+  category WalletChargeCategory
+
+  // Amount in MILLICENTS (positive for top-ups, negative for charges; 1000 = $1.00)
+  amount   Int
+  currency String @default("USD")
+
+  // Balance after this transaction (for historical tracking)
+  balanceAfter Int
+
+  // Description for display
+  description String
+
+  // Optional metadata (JSON) for additional context
+  // e.g., { "model": "gpt-4", "tokens": 1500 } for AI usage
+  metadata String? @db.Text
+
+  // Stripe payment intent ID (for top-ups that involve payment)
+  stripePaymentIntentId String?
+
+  // Reference to original transaction (for refunds)
+  refundedTransactionId String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  wallet              OrganizationWallet  @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  refundedTransaction WalletTransaction?  @relation("Refund", fields: [refundedTransactionId], references: [id], onDelete: SetNull)
+  refunds             WalletTransaction[] @relation("Refund")
+
+  @@index([walletId])
+  @@index([type])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+  @@map("walletTransaction")
+}
+
+// ============================================================================
+// CLIENT PORTAL (PLATFORM ADMIN)
+// ============================================================================
+// SOURCE OF TRUTH: PortalAdmin, PortalRole, PortalSession, PortalAuditLog, PortalSettings
+// These models power the Client Portal - the master admin dashboard for MOCHI platform owners
+// and their team members to manage all organizations on the platform.
+
+/// Portal admin role definitions
+/// Defines the available roles and their permissions for portal access
+/// SOURCE OF TRUTH: PortalRole
+enum PortalRoleType {
+  OWNER // Full platform access - can manage everything including other admins
+  ADMIN // Can manage organizations, users, view analytics - cannot manage other admins
+  SUPPORT // Can view organizations, users, impersonate for support - cannot modify settings
+  VIEWER // Read-only access to analytics and reports
+}
+
+/// Portal admin users - team members who can access the Client Portal
+/// These are platform-level administrators separate from organization members
+/// SOURCE OF TRUTH: PortalAdmin
+model PortalAdmin {
+  id     String         @id @default(cuid())
+  email  String         @unique // Primary identifier - must match a User email
+  userId String?        @unique // Optional link to User table for existing platform users
+  role   PortalRoleType @default(ADMIN) // Role determines permissions
+
+  // Profile info (can be different from User profile)
+  displayName String?
+  avatarUrl   String?
+
+  // Security & Access Control
+  isActive    Boolean   @default(true) // Can be deactivated without deletion
+  lastLoginAt DateTime? // Track last portal access
+  lastLoginIp String? // Track last login IP for security
+  invitedBy   String? // PortalAdmin ID who invited this admin
+  invitedAt   DateTime? // When they were invited
+
+  // Two-factor for extra portal security (separate from user 2FA)
+  portalTwoFactorEnabled Boolean @default(false)
+  portalTwoFactorSecret  String? // TOTP secret for portal-specific 2FA
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user         User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sessions     PortalSession[] // Active portal sessions
+  auditLogs    PortalAuditLog[] @relation("PerformedBy") // Actions this admin performed
+  targetedLogs PortalAuditLog[] @relation("TargetAdmin") // Audit logs where this admin was the target
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@map("portalAdmin")
+}
+
+/// Portal sessions - separate from regular user sessions for extra security
+/// Portal sessions have stricter timeout and require re-authentication
+/// SOURCE OF TRUTH: PortalSession
+model PortalSession {
+  id            String @id @default(cuid())
+  portalAdminId String
+
+  // Session token (hashed for security)
+  tokenHash String @unique // SHA-256 hash of the session token
+
+  // Security metadata
+  ipAddress  String // IP address when session was created
+  userAgent  String // Browser/client info
+  deviceInfo String? // Parsed device info (optional)
+
+  // Session lifecycle
+  expiresAt      DateTime // Portal sessions have shorter expiry (e.g., 4 hours)
+  lastActivityAt DateTime @default(now()) // Updated on each portal action
+
+  // Flags
+  isRevoked     Boolean   @default(false) // Manually revoked by admin or security system
+  revokedAt     DateTime? // When session was revoked
+  revokedReason String? // Why session was revoked
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations
+  portalAdmin PortalAdmin @relation(fields: [portalAdminId], references: [id], onDelete: Cascade)
+
+  @@index([portalAdminId])
+  @@index([expiresAt])
+  @@index([isRevoked])
+  @@map("portalSession")
+}
+
+/// Portal audit log - comprehensive logging of all portal actions for security
+/// Every action in the portal should be logged here for compliance and debugging
+/// SOURCE OF TRUTH: PortalAuditLog
+model PortalAuditLog {
+  id            String @id @default(cuid())
+  portalAdminId String // Who performed the action
+
+  // Action details
+  action     String // e.g., "organization.view", "user.impersonate", "settings.update"
+  resource   String // e.g., "organization", "user", "subscription", "settings"
+  resourceId String? // ID of the affected resource (if applicable)
+
+  // Request context
+  ipAddress     String // IP address of the request
+  userAgent     String // Browser/client info
+  requestPath   String // API endpoint or page path
+  requestMethod String // HTTP method (GET, POST, etc.)
+
+  // Change tracking
+  previousValue String? @db.Text // JSON of previous state (for updates)
+  newValue      String? @db.Text // JSON of new state (for updates)
+  metadata      String? @db.Text // Additional context as JSON
+
+  // Outcome
+  success      Boolean @default(true) // Whether action succeeded
+  errorMessage String? // Error message if action failed
+
+  // Target admin (for admin management actions)
+  targetAdminId String? // If action affects another portal admin
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations
+  portalAdmin PortalAdmin  @relation("PerformedBy", fields: [portalAdminId], references: [id], onDelete: Cascade)
+  targetAdmin PortalAdmin? @relation("TargetAdmin", fields: [targetAdminId], references: [id], onDelete: SetNull)
+
+  @@index([portalAdminId])
+  @@index([action])
+  @@index([resource])
+  @@index([resourceId])
+  @@index([createdAt])
+  @@index([targetAdminId])
+  @@map("portalAuditLog")
+}
+
+/// Portal settings - platform-wide configuration stored in database
+/// Allows dynamic configuration without ENV changes
+/// SOURCE OF TRUTH: PortalSettings
+model PortalSettings {
+  id    String @id @default(cuid())
+  key   String @unique // Setting key (e.g., "portal.session.timeout")
+  value String @db.Text // JSON value for flexibility
+
+  // Metadata
+  description String? // Human-readable description
+  category    String // Grouping (e.g., "security", "notifications", "ui")
+  isSecret    Boolean @default(false) // If true, value should be masked in UI
+
+  // Audit trail
+  lastUpdatedBy String? // PortalAdmin ID who last updated
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  @@index([category])
+  @@map("portalSettings")
+}
+
+/// Portal invitations - for inviting new team members to the portal
+/// Separate from organization invitations
+/// SOURCE OF TRUTH: PortalInvitation
+model PortalInvitation {
+  id    String         @id @default(cuid())
+  email String // Email to invite
+  role  PortalRoleType @default(ADMIN) // Role to assign
+
+  // Invitation token (hashed)
+  tokenHash String @unique // SHA-256 hash of invitation token
+
+  // Lifecycle
+  expiresAt  DateTime // When invitation expires (e.g., 7 days)
+  acceptedAt DateTime? // When invitation was accepted
+
+  // Tracking
+  invitedBy String // PortalAdmin ID who sent the invitation
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+  @@map("portalInvitation")
+}
+
+// ============================================================================
+// AUTOMATION BUILDER
+// ============================================================================
+// SOURCE OF TRUTH: Automation, AutomationRun, AutomationTriggerType, AutomationStatus,
+//                  AutomationRunStatus, AutomationSchema
+//
+// The automation system enables users to create automated workflows triggered by events.
+// - Each automation has ONE trigger (event that starts the workflow)
+// - Triggers fire actions in sequence (or with conditions/delays)
+// - Context is maintained throughout the run (lead, transaction, form data, etc.)
+// - Variables can be interpolated using the existing {{variable}} system
+//
+// ARCHITECTURE:
+// - Automation stores the workflow definition (nodes/edges from React Flow)
+// - AutomationRun tracks each execution with status and step logs
+// - Trigger.dev handles the actual execution with context persistence
+//
+// HARD DELETE: Automations are permanently deleted, runs are kept for audit
+
+/// Automation trigger types - events that can start an automation
+/// SOURCE OF TRUTH: AutomationTriggerType
+enum AutomationTriggerType {
+  // Lead-based triggers
+  FORM_SUBMITTED // When a form is submitted (creates or updates lead)
+  LEAD_CREATED // When a new lead is created
+  LEAD_UPDATED // When an existing lead is updated
+
+  // Tag triggers
+  TAG_ADDED // When a tag is added to a lead
+  TAG_REMOVED // When a tag is removed from a lead
+
+  // Pipeline triggers
+  PIPELINE_TICKET_MOVED // When a pipeline ticket is updated
+
+  // Payment triggers
+  PAYMENT_COMPLETED // When a Stripe payment is successful
+  TRIAL_STARTED // When a trial subscription begins ($0 charged)
+  SUBSCRIPTION_RENEWED // When a recurring subscription payment succeeds (2nd+ invoice)
+  SUBSCRIPTION_CANCELLED // When a subscription ends (cancel, churn, payment failure)
+
+  // Appointment triggers
+  APPOINTMENT_SCHEDULED // When an appointment is booked
+  APPOINTMENT_STARTED // When an appointment start time is reached
+
+  // Email engagement triggers
+  EMAIL_OPENED // When a tracked email is opened
+  EMAIL_CLICKED // When a link in email is clicked
+}
+
+/// Automation status - the lifecycle state of an automation
+/// SOURCE OF TRUTH: AutomationStatus
+enum AutomationStatus {
+  DRAFT // Being edited, won't fire on triggers
+  ACTIVE // Live and will fire on matching triggers
+  PAUSED // Temporarily disabled, can be reactivated
+  ARCHIVED // Soft-archived, hidden from main list but kept for reference
+}
+
+/// Automation run status - the execution state of a single run
+/// SOURCE OF TRUTH: AutomationRunStatus
+enum AutomationRunStatus {
+  PENDING // Queued, waiting to start
+  RUNNING // Currently executing
+  WAITING // Paused, waiting for delay or event
+  COMPLETED // Successfully finished all steps
+  FAILED // Encountered an error and stopped
+  CANCELLED // Manually cancelled by user or system
+}
+
+/// Automation - A workflow definition with trigger and actions
+/// SOURCE OF TRUTH: Automation, AutomationWorkflow, AutomationDefinition
+model Automation {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Basic info
+  name        String
+  description String?
+
+  // URL-safe identifier for direct links (generated from name)
+  // Unique per organization, similar to Form.slug
+  slug String?
+
+  // Status controls whether automation fires on triggers
+  status AutomationStatus @default(DRAFT)
+
+  // Trigger configuration - ONE trigger per automation
+  // This defines what event starts the automation
+  triggerType   AutomationTriggerType
+  triggerConfig Json? // Trigger-specific config (e.g., which form, which tag, which pipeline)
+
+  // Workflow schema - stores React Flow nodes and edges
+  // Structure: { nodes: Node[], edges: Edge[] }
+  // Each node has: id, type, position, data (with action config)
+  // Each edge has: id, source, target, sourceHandle, targetHandle
+  schema Json @default("{\"nodes\":[],\"edges\":[]}")
+
+  // Statistics (denormalized for quick access)
+  totalRuns      Int       @default(0)
+  successfulRuns Int       @default(0)
+  failedRuns     Int       @default(0)
+  lastRunAt      DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Folder organization (optional - null means root level)
+  folderId String?
+  folder   AutomationFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  // Relations
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runs         AutomationRun[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, triggerType])
+  @@index([triggerType, status])
+  @@index([organizationId, folderId])
+  @@map("automation")
+}
+
+/// AutomationFolder - Folder organization for automations
+/// Supports nested folder hierarchy (self-referencing)
+/// SOURCE OF TRUTH: AutomationFolder, AutomationFolderHierarchy
+model AutomationFolder {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Folder metadata
+  name  String // Display name (e.g., "Marketing Workflows", "Onboarding")
+  color String? // Optional hex color for visual distinction (e.g., "#3B82F6")
+
+  // Folder hierarchy (self-referencing for nesting)
+  parentId String?
+  parent   AutomationFolder?  @relation("AutomationFolderHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children AutomationFolder[] @relation("AutomationFolderHierarchy")
+
+  // Automations in this folder
+  automations Automation[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, parentId])
+  @@map("automation_folder")
+}
+
+/// AutomationRun - A single execution of an automation
+/// Tracks the progress and results of each run
+/// SOURCE OF TRUTH: AutomationRun, AutomationExecution, WorkflowRun
+model AutomationRun {
+  id             String  @id @default(cuid())
+  automationId   String? // Optional: null when automation is deleted (audit trail preserved)
+  organizationId String // Denormalized for efficient queries
+
+  // Run status
+  status AutomationRunStatus @default(PENDING)
+
+  // Trigger context - the data that started this run
+  // Contains leadId, and trigger-specific data (formSubmission, transaction, etc.)
+  // This is the SOURCE OF TRUTH for variable interpolation during execution
+  triggerData Json
+
+  // Execution log - array of step results
+  // Structure: [{ nodeId, nodeType, status, startedAt, completedAt, result?, error? }]
+  // Updated as each node executes
+  steps Json @default("[]")
+
+  // Current position in workflow (for resuming after waits)
+  currentNodeId String?
+
+  // Trigger.dev integration
+  triggerDevRunId String? @unique // Reference to the Trigger.dev run for monitoring
+
+  // Wait token for wait-for-event actions
+  // When automation is waiting for an event, this token is used to resume
+  waitTokenId String?
+
+  // Error information (if failed)
+  error String? @db.Text
+
+  // Timing
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  automation Automation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
+  // Note: Using SetNull so runs are preserved when automation is deleted (audit trail)
+
+  @@index([automationId])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([status])
+  @@index([triggerDevRunId])
+  @@index([createdAt])
+  @@map("automationRun")
+/// Activity Log - Tracks user create/update/delete actions across the platform
+/// Used for platform analytics, audit trails, and churn detection
+/// SOURCE OF TRUTH: ActivityLog, PlatformActivityTracking
+}
+model ActivityLog {
+  id             String   @id @default(cuid())
+  userId         String   // User who performed the action
+  organizationId String   // Organization context
+  action         String   // "create" | "update" | "delete"
+  entity         String   // Entity type (e.g., "website", "form", "lead", "product")
+  entityId       String   // ID of the affected entity
+  createdAt      DateTime @default(now())
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([organizationId, createdAt])
+  @@index([action])
+  @@index([entity])
+  @@map("activity_log")
+}
+
+// ============================================================================
+// INVOICES
+// ============================================================================
+
+/// Invoice status lifecycle: DRAFT → SENT → PAID (or OVERDUE / CANCELED)
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELED
+}
+
+/// Invoice — Billable document sent to a lead for payment.
+///
+/// Follows the Contract model pattern: CRUD with rich-text notes (Lexical JSON),
+/// a public accessToken for the view/pay link, and Stripe integration for payments.
+///
+/// SOURCE OF TRUTH KEYWORDS: Invoice, InvoiceModel, InvoiceBilling
+model Invoice {
+  id             String   @id @default(cuid())
+  organizationId String
+  leadId         String?  // Recipient lead (optional — can be assigned later)
+
+  // Invoice identity
+  invoiceNumber String  // Auto-generated per org, e.g. "INV-0001"
+  name          String  // Display name (e.g. "Website Redesign Invoice")
+
+  // Status & lifecycle
+  status InvoiceStatus @default(DRAFT)
+
+  // Rich-text notes (Lexical SerializedEditorState JSON)
+  // Supports dynamic variable pills (lead.firstName, org.name, etc.)
+  notes Json?
+
+  // Payment details
+  dueDate     DateTime?
+  currency    String    @default("usd")
+  totalAmount Int       @default(0) // Sum of all items, in cents
+
+  // Public access link — generated on send, used for /invoice/[accessToken]
+  accessToken String? @unique
+
+  // Stripe references for tracking payment
+  stripePaymentIntentId String? @unique
+  stripeSubscriptionId  String? @unique
+
+  // Receipt link — when invoice is generated from a payment receipt,
+  // this links to the TransactionPayment that originated the invoice.
+  // Enables the receipt page to show "Download Invoice" for already-generated invoices.
+  transactionPaymentId String? @unique
+
+  // Timestamps
+  sentAt    DateTime? // When the invoice was sent to the lead
+  paidAt    DateTime? // When the invoice was paid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  payment      TransactionPayment? @relation(fields: [transactionPaymentId], references: [id], onDelete: SetNull)
+  items        InvoiceItem[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([leadId])
+  @@index([accessToken])
+  @@index([transactionPaymentId])
+  @@map("invoice")
+}
+
+/// InvoiceItem — A line item on an invoice.
+///
+/// Can reference an existing Product/Price (productId + priceId) or be
+/// an ad-hoc one-time item (isAdHoc: true) with no product reference.
+///
+/// SOURCE OF TRUTH KEYWORDS: InvoiceItem, InvoiceLineItem
+model InvoiceItem {
+  id        String @id @default(cuid())
+  invoiceId String
+
+  // Product reference (null for ad-hoc items)
+  productId String?
+  priceId   String?
+
+  // Line item details (snapshots — don't change if product is updated later)
+  name        String  // Product name or custom item name
+  description String? // Optional description for the line item
+
+  // Pricing
+  quantity    Int @default(1)
+  unitAmount  Int // Price per unit in cents
+  totalAmount Int // quantity × unitAmount, in cents
+
+  // Billing type (mostly ONE_TIME for invoices, but supports recurring)
+  billingType   BillingType     @default(ONE_TIME)
+  interval      BillingInterval? // For recurring items
+  intervalCount Int?             // How many intervals between payments
+  trialDays     Int?             // Free trial duration in days — mirrors ProductPrice.trialDays
+
+  // Whether this is an ad-hoc item (not linked to a product)
+  isAdHoc Boolean @default(false)
+
+  // Relations
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_item")
+}
+
+// ============================================================================
+// PAGE VIEW MODEL - Website Analytics Tracking
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: PageView, WebsiteAnalytics, PageTracking, VisitorTracking
+//
+// WHY: Tracks page visits on live published websites. Used for:
+// 1. Website metrics dashboard (total visits, unique visitors, per-page stats)
+// 2. Lead activity timeline (PAGE_VISITED activity type)
+// 3. UTM source attribution for leads
+//
+// HOW: A lightweight client component fires a non-blocking tRPC mutation when
+// a visitor loads a published page. Server-side debounce (1 hour per visitorId + pageId)
+// prevents spam from page refreshes.
+//
+// visitorId: Anonymous browser fingerprint stored in localStorage. Not a lead ID.
+// When a visitor has a lead session, leadId is also populated for attribution.
+//
+// ONLY tracks live published pages — not preview/test/builder mode.
+// ============================================================================
+
+model PageView {
+  id             String  @id @default(cuid())
+  organizationId String
+  websiteId      String
+  pageId         String
+  leadId         String? // Nullable — populated if visitor has an active lead session
+
+  // Visitor identification (anonymous, localStorage-based)
+  visitorId String // Browser-generated UUID stored in localStorage
+
+  // Page context
+  pathname String // URL path visited (e.g., "/home", "/about")
+
+  // UTM tracking parameters
+  utmSource   String? // utm_source from URL params
+  utmMedium   String? // utm_medium from URL params
+  utmCampaign String? // utm_campaign from URL params
+
+  // Referrer tracking
+  referrer String? // document.referrer value
+
+  // Timestamp
+  visitedAt DateTime @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  website      Website      @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  page         Page         @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  // Indexes for efficient querying
+  @@index([organizationId])
+  @@index([websiteId])
+  @@index([pageId])
+  @@index([leadId])
+  @@index([visitorId, pageId, visitedAt]) // Debounce check: same visitor + page within time window
+  @@index([websiteId, visitedAt])         // Metrics queries: page views by date range
+  @@index([organizationId, visitedAt])    // Org-wide analytics queries
+  @@map("page_view")
+}
+
+// ============================================================================
+// NOTIFICATION — In-app notifications for org members
+// ============================================================================
+
+/// In-app notification delivered to a specific user within an organization.
+/// Org-scoped: every notification belongs to exactly one organization.
+/// Category is a free-text string so new notification types can be added
+/// without schema migrations (e.g., 'payment', 'lead', 'automation',
+/// 'form', 'appointment', 'system', 'invoice', 'contract').
+model Notification {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String   // The recipient user (member of the organization)
+
+  // Notification content
+  title    String  // Short headline shown in the notification list
+  body     String  // Longer description / detail text
+  category String  // Logical grouping: 'payment', 'lead', 'automation', 'form', 'appointment', 'system', etc.
+
+  // Optional deep-link URL the user is taken to when clicking the notification
+  actionUrl String?
+
+  // Read state tracking
+  isRead Boolean   @default(false)
+  readAt DateTime? // Timestamp when the user marked this notification as read
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations — org-scoped, cascade-delete when org or user is removed
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Composite index for the primary query: "all unread notifications for a
+  // user in an org, newest first". Covering organizationId + userId + isRead
+  // + createdAt lets Postgres satisfy the WHERE + ORDER BY from one index scan.
+  @@index([organizationId, userId, isRead, createdAt])
+
+  // Secondary indexes for common access patterns
+  @@index([organizationId]) // Org-wide notification queries / admin views
+  @@index([userId])         // Cross-org notification lookup for a user
+
+  @@map("notification")
+}
+
+// ============================================================================
+// PUSH SUBSCRIPTION — Web Push subscriptions for PWA push notifications
+// ============================================================================
+
+/// Web Push subscription for PWA push notifications.
+/// Stores the browser's PushSubscription data so the server can send
+/// native push notifications to the user's device even when the app is
+/// closed or backgrounded.
+///
+/// Each record = one device/browser subscription for one user in one org.
+/// A user can have multiple subscriptions (phone + laptop + tablet).
+model PushSubscription {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String   // The user who subscribed on this device
+
+  // PushSubscription fields from the Web Push API
+  endpoint String  // The push service URL (unique per browser instance)
+  p256dh   String  // Client public key for payload encryption
+  auth     String  // Shared auth secret for payload encryption
+
+  createdAt DateTime @default(now())
+
+  // Relations — cascade-delete when org or user is removed
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One push subscription per device/browser — endpoint is globally unique.
+  // When a different user logs in on the same device, the record is updated
+  // to point to the new user (upsert by endpoint).
+  @@unique([endpoint])
+
+  // Index for "send push to all of this user's devices in this org"
+  @@index([organizationId, userId])
+
+  @@map("push_subscription")
+}
+
+// ============================================================================
+// SavedColor — Organization Brand/Reusable Colors
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: SavedColor, SavedColors, OrganizationColors, BrandColors
+//
+// Allows organizations to save and reuse brand colors across the website builder.
+// Each color has a name (e.g., "Brand Blue") and a value (hex, rgba, or 'transparent').
+// Colors are org-scoped and uniquely named within an org.
+// ============================================================================
+
+model SavedColor {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String   // Human-readable label ("Brand Blue", "Accent Red", etc.)
+  color          String   // Color value: hex (#ff0000), rgba(r,g,b,a), or 'transparent'
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Cascade-delete when the organization is removed
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // No two colors in the same org can share a name
+  @@unique([organizationId, name])
+
+  // Fast lookup by org
+  @@index([organizationId])
+
+  @@map("saved_color")
+}
+
+// ============================================================================
+// TEMPLATE CATEGORY — What feature type a template or item represents
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: TemplateCategory, TemplateCategoryEnum, TemplateFeatureType
+//
+// Each value maps to one of the app's core features. BLUEPRINT represents a
+// multi-feature bundle (e.g., a full marketing funnel that combines website +
+// automation + form).
+// ============================================================================
+
+enum TemplateCategory {
+  WEBSITE       // Website with pages, components, and canvas data
+  EMAIL         // Email template (React Email builder blocks)
+  AUTOMATION    // Automation workflow (trigger + node schema)
+  FORM          // Form with fields, logic gates, and settings
+  CONTRACT      // Contract with Lexical editor content and variables
+  PIPELINE      // Pipeline with lanes and ticket structure
+  BOOKING       // Booking calendar with availability and settings
+  CHAT_WIDGET   // Chat widget with config, FAQ items, and updates
+  CMS_SCHEMA    // CMS table schema (columns only, no row data)
+  PRODUCT       // Product with prices (Stripe IDs stripped)
+  BLUEPRINT     // Multi-feature bundle combining several categories
+}
+
+// ============================================================================
+// TEMPLATE STATUS — Lifecycle state of a template
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: TemplateStatus, TemplateStatusEnum, TemplateLifecycle
+//
+// Controls visibility and installability:
+// - DRAFT: Work in progress, only visible to the author org
+// - PUBLISHED: Available for installation by other orgs
+// - ARCHIVED: Hidden from library but existing installs still work
+// ============================================================================
+
+enum TemplateStatus {
+  DRAFT            // Work in progress — not visible in the library
+  PUBLISHED        // Live and installable by any organization
+  ARCHIVED         // Hidden from library — existing installs unaffected
+  PENDING_APPROVAL // Paid template awaiting portal admin review
+}
+
+// ============================================================================
+// TEMPLATE — A reusable, shareable package of one or more features
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: Template, TemplateModel, TemplatePackage
+//
+// A template is created by an organization and packages one or more TemplateItems
+// (feature snapshots). Other organizations can install a template to recreate
+// those features in their workspace.
+//
+// - originHash: SHA-256 fingerprint of the source features at snapshot time.
+//   Used to detect duplicate templates and track lineage.
+// - version: Monotonically increasing integer bumped on each publish.
+// - installCount: Denormalized counter for library sorting/popularity.
+// ============================================================================
+
+model Template {
+  id             String   @id @default(cuid())
+  organizationId String
+
+  // Template metadata
+  name         String
+  description  String? @db.Text
+  category     TemplateCategory
+  status       TemplateStatus @default(DRAFT)
+  thumbnailUrl String?
+  tags         String[] @default([])
+
+  // Versioning — bumped each time the template is re-published
+  version Int @default(1)
+
+  // Price in cents — null means free. Currency resolved from platform Stripe account.
+  price Int?
+
+  // Rejection reason — set by portal admin when rejecting a PENDING_APPROVAL template.
+  // Cleared when the template is re-published. Displayed to the creator so they can fix issues.
+  rejectionReason String? @db.Text
+
+  // Denormalized install counter for popularity sorting in the library
+  installCount Int @default(0)
+
+  // SHA-256 fingerprint of the source features at snapshot time
+  // Used for duplicate detection and lineage tracking
+  originHash String
+
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+
+  // Relations
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        TemplateItem[]
+  installs     TemplateInstall[]
+
+  @@index([organizationId])
+  @@index([category, status])
+  @@index([status])
+  @@index([originHash])
+  @@map("template")
+}
+
+// ============================================================================
+// TEMPLATE ITEM — A single feature snapshot within a template
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: TemplateItem, TemplateItemModel, FeatureSnapshot
+//
+// Each item captures a JSON snapshot of one feature (website, form, automation,
+// etc.) at the time the template was created. The snapshot is sanitized to
+// remove PII, Stripe IDs, and org-specific references.
+//
+// - featureType: Which feature this item represents (may differ from the
+//   parent template's category in BLUEPRINT templates).
+// - sourceId: Original feature ID in the author's org (informational only).
+// - snapshot: The sanitized JSON blob — structure varies per featureType.
+// - dependsOn: Array of other TemplateItem IDs this item depends on during
+//   installation (e.g., a form used inside an automation).
+// - originHash: Per-item fingerprint for granular duplicate detection.
+// - order: Installation order (topologically sorted).
+// ============================================================================
+
+model TemplateItem {
+  id         String @id @default(cuid())
+  templateId String
+
+  // Which feature type this snapshot represents
+  featureType TemplateCategory
+
+  // Original feature ID in the author's org (informational, not a FK)
+  sourceId   String
+  sourceName String
+
+  // Sanitized JSON snapshot — structure varies per featureType
+  // See FeatureSnapshotMap in src/lib/templates/types.ts for per-type shapes
+  snapshot Json
+
+  // Other TemplateItem IDs this item depends on for installation
+  // e.g., a form snapshot that an automation snapshot references
+  dependsOn String[] @default([])
+
+  // Per-item SHA-256 fingerprint for granular lineage tracking
+  originHash String
+
+  // Installation order (lower = installed first, topologically sorted)
+  order Int @default(0)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@index([originHash])
+  @@map("templateItem")
+}
+
+// ============================================================================
+// TEMPLATE INSTALL — Record of a template being installed into an organization
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: TemplateInstall, TemplateInstallModel, InstallRecord
+//
+// Created each time an organization installs a template. Stores the ID mapping
+// between the template's source IDs and the newly created feature IDs so that
+// cross-references (e.g., form inside automation) are properly re-linked.
+//
+// - templateVersion: Snapshot of the template version at install time.
+// - idMapping: JSON map of { oldId → newId } for all created features.
+// - originHash: Hash of the template at install time for audit/lineage.
+// ============================================================================
+
+model TemplateInstall {
+  id             String @id @default(cuid())
+  templateId     String
+  organizationId String
+  installedById  String // User ID of the member who triggered the install
+
+  // Version of the template at the time of installation
+  templateVersion Int
+
+  // ID mapping: { sourceFeatureId → newlyCreatedFeatureId }
+  // Used to re-link cross-references between installed features
+  idMapping Json
+
+  // Hash of the template at install time for audit trail
+  originHash String
+
+  // Timestamp
+  installedAt DateTime @default(now())
+
+  // Relations
+  template     Template     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([templateId])
+  @@index([originHash])
+  @@map("templateInstall")
+}
+
+// ============================================================================
+// TEMPLATE ORIGIN MARKER — Tracks which features were created from templates
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: TemplateOriginMarker, OriginMarker, FeatureLineage
+//
+// Stamped on every feature (form, page, automation, etc.) that was created
+// by installing a template. Allows the system to:
+// 1. Show "Installed from [Template Name]" badges in the UI.
+// 2. Detect if a feature was already installed (prevent duplicates).
+// 3. Trace lineage back to the original template + install record.
+//
+// The @@unique([featureType, featureId]) constraint ensures a feature can only
+// have one origin marker — it either came from a template or it didn't.
+// ============================================================================
+
+model TemplateOriginMarker {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // Which feature type and which specific feature this marker is for
+  featureType TemplateCategory
+  featureId   String
+
+  // Lineage references
+  originHash String // Hash linking back to the template item's originHash
+  templateId String // Template this feature was installed from (informational, not FK)
+  installId  String // TemplateInstall record ID (informational, not FK)
+
+  // Timestamp
+  createdAt DateTime @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // A feature can only have one origin marker
+  @@unique([featureType, featureId])
+
+  @@index([organizationId])
+  @@index([originHash])
+  @@index([featureId])
+  @@map("templateOriginMarker")
+}

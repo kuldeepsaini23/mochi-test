@@ -1,0 +1,30 @@
+// ============================================================================
+// SavedColor Prisma Model — SCHEMA SNIPPET (NOT auto-applied)
+// ============================================================================
+//
+// SOURCE OF TRUTH KEYWORDS: SavedColor, SavedColors, OrganizationColors, BrandColors
+//
+// INSTRUCTIONS FOR DEVELOPER:
+// 1. Copy the model below into your schema.prisma file
+// 2. Add `savedColors SavedColor[]` to the Organization model
+// 3. Run `prisma generate` and `prisma db push` (or create a migration)
+//
+// WHY: Allows organizations to save and reuse brand colors across the website
+// builder. Each color has a name (e.g., "Brand Blue") and a value (hex, rgba,
+// or 'transparent'). Colors are org-scoped and uniquely named within an org.
+// ============================================================================
+
+model SavedColor {
+  id              String       @id @default(cuid())
+  organizationId  String
+  name            String       // "Brand Blue", "Accent Red", etc.
+  color           String       // hex (#ff0000), rgba(r,g,b,a), or 'transparent'
+  sortOrder       Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
