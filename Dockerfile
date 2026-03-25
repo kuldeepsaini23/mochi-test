@@ -223,8 +223,13 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy node_modules for runtime dependencies (Prisma, etc.)
-COPY --from=builder /app/node_modules ./node_modules
+# Copy only Prisma engine binaries and generated client for runtime queries.
+# WHY: Standalone mode bundles all JS dependencies already — the only runtime
+# files it does NOT include are Prisma's native query engine binaries and the
+# generated client output. Copying the full node_modules (~1GB) would double
+# the image size and is the likely cause of disk-space build failures.
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Copy Prisma schema (needed for runtime queries)
 COPY --from=builder /app/prisma ./prisma
